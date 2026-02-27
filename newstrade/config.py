@@ -29,6 +29,7 @@ class AppConfig:
     max_pct_change: float = 30.0
     min_price: float | None = 3.0
     max_price: float | None = 2000.0
+    market_cap_enabled: bool = True
     min_market_cap: float | None = 1_000_000_000.0
     max_market_cap: float | None = 5_000_000_000_000.0
 
@@ -68,7 +69,8 @@ class AppConfig:
         if self.min_price is not None and self.max_price is not None and self.min_price > self.max_price:
             raise ConfigError("MIN_PRICE cannot be greater than MAX_PRICE")
         if (
-            self.min_market_cap is not None
+            self.market_cap_enabled
+            and self.min_market_cap is not None
             and self.max_market_cap is not None
             and self.min_market_cap > self.max_market_cap
         ):
@@ -93,7 +95,7 @@ class AppConfig:
 
     @property
     def market_cap_filter_active(self) -> bool:
-        return self.min_market_cap is not None or self.max_market_cap is not None
+        return self.market_cap_enabled and (self.min_market_cap is not None or self.max_market_cap is not None)
 
 
 def _parse_symbols(raw: str) -> list[str]:
@@ -118,6 +120,19 @@ def _parse_optional_int(raw: str | None, default: int | None) -> int | None:
     return int(text)
 
 
+def _parse_binary_flag(raw: str | None, default: bool, name: str) -> bool:
+    if raw is None:
+        return default
+    text = raw.strip()
+    if text == "":
+        return default
+    if text == "1":
+        return True
+    if text == "0":
+        return False
+    raise ConfigError(f"{name} must be 0 or 1")
+
+
 def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
     symbol_mode = mapping.get("SYMBOL_MODE", "both").strip().lower()
     symbols = _parse_symbols(mapping.get("SYMBOLS", "AAPL,MSFT,NVDA"))
@@ -133,6 +148,7 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         max_pct_change=float(mapping.get("MAX_PCT_CHANGE", 30.0)),
         min_price=_parse_optional_float(mapping.get("MIN_PRICE"), 3.0),
         max_price=_parse_optional_float(mapping.get("MAX_PRICE"), 2000.0),
+        market_cap_enabled=_parse_binary_flag(mapping.get("MARKET_CAP"), True, "MARKET_CAP"),
         min_market_cap=_parse_optional_float(mapping.get("MIN_MARKET_CAP"), 1_000_000_000.0),
         max_market_cap=_parse_optional_float(mapping.get("MAX_MARKET_CAP"), 5_000_000_000_000.0),
         news_lookback_hours=int(mapping.get("NEWS_LOOKBACK_HOURS", 24)),

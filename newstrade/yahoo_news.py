@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import quote, urlparse, urlunparse
 import time
 import xml.etree.ElementTree as ET
 
@@ -152,8 +152,86 @@ def fetch_market_caps(symbols: list[str], timeout_seconds: int = 15) -> dict[str
         for row in payload.get("quoteResponse", {}).get("result", []):
             symbol = str(row.get("symbol", "")).upper()
             if symbol:
-                result[symbol] = row.get("marketCap")
+                result[symbol] = _as_float(row.get("marketCap"))
 
         # Keep request pacing low to reduce Yahoo throttling.
         time.sleep(0.15)
+
+    missing_symbols = [symbol for symbol, value in result.items() if value is None]
+    if not missing_symbols:
+        return result
+
+    now_ts = int(time.time())
+    period1 = now_ts - 365 * 24 * 60 * 60
+
+    for symbol in missing_symbols:
+        encoded_symbol = quote(symbol, safe="")
+        timeseries_url = (
+            "https://query1.finance.yahoo.com/ws/fundamentals-timeseries/v1/finance/timeseries/"
+            f"{encoded_symbol}?merge=false&padTimeSeries=true&period1={period1}&period2={now_ts}"
+            "&type=trailingMarketCap,quarterlyMarketCap"
+        )
+        payload: dict[str, Any] | None = None
+
+        for attempt in range(3):
+            try:
+                response = requests.get(timeseries_url, timeout=timeout_seconds, headers=headers)
+                if response.status_code == 429:
+                    if attempt < 2:
+                        time.sleep(1.0 * (2**attempt))
+                        continue
+                    break
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except requests.RequestException:
+                if attempt < 2:
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                break
+
+        if payload is None:
+            continue
+
+        result[symbol] = _extract_market_cap_from_timeseries(payload)
+        time.sleep(0.1)
     return result
+
+
+def _as_float(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    return None
+
+
+def _extract_market_cap_from_timeseries(payload: dict[str, Any]) -> float | None:
+    entries = payload.get("timeseries", {}).get("result", [])
+    if not isinstance(entries, list):
+        return None
+
+    candidates: list[tuple[str, int, float]] = []
+    for series_name, priority in (("trailingMarketCap", 1), ("quarterlyMarketCap", 0)):
+        for item in entries:
+            points = item.get(series_name)
+            if not isinstance(points, list):
+                continue
+            for point in points:
+                if not isinstance(point, dict):
+                    continue
+                reported_value = point.get("reportedValue")
+                if not isinstance(reported_value, dict):
+                    continue
+                raw = _as_float(reported_value.get("raw"))
+                if raw is None:
+                    continue
+                as_of_date = str(point.get("asOfDate", "")).strip()
+                candidates.append((as_of_date, priority, raw))
+
+    if not candidates:
+        return None
+
+    # Prefer the newest date; when tied, prefer trailing over quarterly.
+    best = max(candidates, key=lambda item: (item[0], item[1]))
+    return best[2]

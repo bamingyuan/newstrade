@@ -72,6 +72,7 @@ The dashboard is read-only and shows:
 
 - Timestamps are stored in UTC.
 - If OpenAI fails for an article, the pipeline stores a fallback neutral score and continues.
+- Set `MARKET_CAP=0` in `.env` to skip market-cap API calls entirely. In that mode, market-cap filters are disabled and `symbols_snapshot.market_cap` stays empty.
 - If market-cap filters are active and cap data is unavailable for a symbol, that symbol is filtered out.
 
 ## 6) Tests

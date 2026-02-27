@@ -88,12 +88,18 @@ def run_scan(
             return scan_run_id
 
         market_cap_unavailable_globally = False
-        try:
-            market_caps = market_cap_fetcher(symbols)
-        except Exception:  # noqa: BLE001
+        market_cap_disabled_by_config = not config.market_cap_enabled
+        if config.market_cap_enabled:
+            try:
+                market_caps = market_cap_fetcher(symbols)
+            except Exception:  # noqa: BLE001
+                market_caps = {symbol: None for symbol in symbols}
+        else:
             market_caps = {symbol: None for symbol in symbols}
 
-        if config.market_cap_filter_active and market_caps and all(value is None for value in market_caps.values()):
+        if market_cap_disabled_by_config:
+            filter_config = replace(config, min_market_cap=None, max_market_cap=None)
+        elif config.market_cap_filter_active and market_caps and all(value is None for value in market_caps.values()):
             market_cap_unavailable_globally = True
             filter_config = replace(config, min_market_cap=None, max_market_cap=None)
         else:
@@ -149,6 +155,8 @@ def run_scan(
         insert_symbol_snapshots(conn, snapshot_rows)
 
         notes = f"Processed {len(symbols)} symbols, passed {passed_count}."
+        if market_cap_disabled_by_config:
+            notes += " Market-cap fetching disabled via MARKET_CAP=0."
         if market_cap_unavailable_globally:
             notes += " Market-cap filtering temporarily disabled because Yahoo market-cap data was unavailable."
         if failed_details:
