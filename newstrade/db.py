@@ -210,7 +210,7 @@ def get_unscored_articles(conn: sqlite3.Connection, scan_run_id: int) -> list[sq
             FROM news_articles na
             LEFT JOIN article_scores a ON a.article_id = na.article_id
             WHERE na.scan_run_id = ?
-              AND a.article_id IS NULL
+              AND (a.article_id IS NULL OR a.error_message IS NOT NULL)
             ORDER BY na.symbol, na.published_ts_utc DESC
             """,
             (scan_run_id,),
