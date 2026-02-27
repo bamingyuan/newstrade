@@ -3,4 +3,6 @@
 .pytest*/
 __pycache__/
 **/__pycache__/
-tests/
+**/tests/
+.pytest_cache/
+**/*.db
