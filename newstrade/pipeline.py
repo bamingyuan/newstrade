@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from typing import Any, Callable
 
@@ -86,7 +87,17 @@ def run_scan(
             update_scan_run_status(conn, scan_run_id, "completed", "No symbols resolved")
             return scan_run_id
 
-        market_caps = market_cap_fetcher(symbols)
+        market_cap_unavailable_globally = False
+        try:
+            market_caps = market_cap_fetcher(symbols)
+        except Exception:  # noqa: BLE001
+            market_caps = {symbol: None for symbol in symbols}
+
+        if config.market_cap_filter_active and market_caps and all(value is None for value in market_caps.values()):
+            market_cap_unavailable_globally = True
+            filter_config = replace(config, min_market_cap=None, max_market_cap=None)
+        else:
+            filter_config = config
 
         snapshot_rows: list[dict[str, Any]] = []
         passed_count = 0
@@ -116,7 +127,7 @@ def run_scan(
                 continue
 
             snapshot["market_cap"] = market_caps.get(symbol)
-            passed, reason = passes_symbol_filters(snapshot, config, scan_window)
+            passed, reason = passes_symbol_filters(snapshot, filter_config, scan_window)
             if passed:
                 passed_count += 1
             else:
@@ -138,15 +149,20 @@ def run_scan(
         insert_symbol_snapshots(conn, snapshot_rows)
 
         notes = f"Processed {len(symbols)} symbols, passed {passed_count}."
+        if market_cap_unavailable_globally:
+            notes += " Market-cap filtering temporarily disabled because Yahoo market-cap data was unavailable."
         if failed_details:
             notes += " Some symbols failed filters or data fetch."
         update_scan_run_status(conn, scan_run_id, "completed", notes)
         return scan_run_id
     except Exception as exc:  # noqa: BLE001
-        message = (
-            "Scan failed. Ensure IB Gateway/TWS is running and reachable at "
-            f"{config.ibkr_host}:{config.ibkr_port} with client id {config.ibkr_client_id}. Error: {exc}"
-        )
+        if isinstance(exc, OSError):
+            message = (
+                "Scan failed. Ensure IB Gateway/TWS is running and reachable at "
+                f"{config.ibkr_host}:{config.ibkr_port} with client id {config.ibkr_client_id}. Error: {exc}"
+            )
+        else:
+            message = f"Scan failed due to an upstream data or pipeline error: {exc}"
         update_scan_run_status(conn, scan_run_id, "failed", message)
         raise PipelineError(message) from exc
     finally:

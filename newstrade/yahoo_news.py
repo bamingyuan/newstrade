@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from email.utils import parsedate_to_datetime
 from typing import Any
 from urllib.parse import urlparse, urlunparse
+import time
 import xml.etree.ElementTree as ET
 
 import requests
@@ -93,16 +94,43 @@ def fetch_market_caps(symbols: list[str], timeout_seconds: int = 15) -> dict[str
     if not symbols:
         return result
 
-    chunk_size = 50
+    chunk_size = 10
+    headers = {
+        "Accept": "application/json",
+        "User-Agent": "Mozilla/5.0 (compatible; newstrade/1.0; +https://example.invalid/newstrade)",
+    }
+
     for start in range(0, len(symbols), chunk_size):
         chunk = symbols[start : start + chunk_size]
         query = ",".join(chunk)
         url = f"https://query1.finance.yahoo.com/v7/finance/quote?symbols={query}"
-        response = requests.get(url, timeout=timeout_seconds)
-        response.raise_for_status()
-        payload = response.json()
+        payload: dict[str, Any] | None = None
+
+        for attempt in range(3):
+            try:
+                response = requests.get(url, timeout=timeout_seconds, headers=headers)
+                if response.status_code == 429:
+                    if attempt < 2:
+                        time.sleep(1.0 * (2**attempt))
+                        continue
+                    break
+                response.raise_for_status()
+                payload = response.json()
+                break
+            except requests.RequestException:
+                if attempt < 2:
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                break
+
+        if payload is None:
+            continue
+
         for row in payload.get("quoteResponse", {}).get("result", []):
             symbol = str(row.get("symbol", "")).upper()
             if symbol:
                 result[symbol] = row.get("marketCap")
+
+        # Keep request pacing low to reduce Yahoo throttling.
+        time.sleep(0.15)
     return result
