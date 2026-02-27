@@ -43,8 +43,31 @@ def fetch_symbol_news(
     now = utc_now()
     cutoff = now - timedelta(hours=lookback_hours)
 
-    response = requests.get(rss_url, timeout=timeout_seconds)
-    response.raise_for_status()
+    headers = {
+        "Accept": "application/rss+xml,application/xml;q=0.9,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (compatible; newstrade/1.0; +https://example.invalid/newstrade)",
+    }
+
+    response: requests.Response | None = None
+    for attempt in range(3):
+        try:
+            candidate = requests.get(rss_url, timeout=timeout_seconds, headers=headers)
+            if candidate.status_code == 429:
+                if attempt < 2:
+                    time.sleep(1.0 * (2**attempt))
+                    continue
+                candidate.raise_for_status()
+            candidate.raise_for_status()
+            response = candidate
+            break
+        except requests.RequestException:
+            if attempt < 2:
+                time.sleep(0.5 * (2**attempt))
+                continue
+            raise
+
+    if response is None:
+        return []
 
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
