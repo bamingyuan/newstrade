@@ -1,0 +1,8 @@
+pandas>=2.2.0
+python-dotenv>=1.0.0
+ib-insync>=0.9.86
+requests>=2.31.0
+openai>=1.30.0
+jsonschema>=4.21.0
+streamlit>=1.34.0
+pytest>=8.0.0
