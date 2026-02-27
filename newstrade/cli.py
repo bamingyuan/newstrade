@@ -58,7 +58,26 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "score":
-        scored_articles, symbol_scores = run_score(config=config, scan_run_id=args.scan_run_id)
+        def _print_score_progress(event: dict[str, object]) -> None:
+            current = int(event.get("current", 0))
+            total = int(event.get("total", 0))
+            status = str(event.get("status", "ok")).upper()
+            symbol = str(event.get("symbol", ""))
+            url = str(event.get("url", ""))
+            title = str(event.get("title", ""))
+            print(f"[{current}/{total}] {status}")
+            print(f"symbol: {symbol}")
+            print(f"url: {url}")
+            print(f"title: {title}")
+            if status == "ERROR":
+                print(f"error: {event.get('error_message', '')}")
+            print("")
+
+        scored_articles, symbol_scores = run_score(
+            config=config,
+            scan_run_id=args.scan_run_id,
+            progress_callback=_print_score_progress,
+        )
         print(
             f"Scored {scored_articles} article(s) and updated {symbol_scores} symbol score(s) "
             f"for scan_run_id={args.scan_run_id}"

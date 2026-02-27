@@ -230,6 +230,7 @@ def run_score(
     config: AppConfig,
     scan_run_id: int,
     scorer: Any | None = None,
+    progress_callback: Callable[[dict[str, Any]], None] | None = None,
 ) -> tuple[int, int]:
     conn = connect_db(config.db_path)
     init_db(conn)
@@ -247,6 +248,7 @@ def run_score(
     articles = get_unscored_articles(conn, scan_run_id)
 
     scored_count = 0
+    total_articles = len(articles)
     for article in articles:
         article_payload = {
             "symbol": article["symbol"],
@@ -282,6 +284,19 @@ def run_score(
             },
         )
         scored_count += 1
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "current": scored_count,
+                    "total": total_articles,
+                    "article_id": article["article_id"],
+                    "symbol": article["symbol"],
+                    "url": article["url"],
+                    "title": article["title"],
+                    "status": "error" if error_message else "ok",
+                    "error_message": error_message,
+                }
+            )
 
     symbols = get_symbols_for_run(conn, scan_run_id, passed_only=True)
     for symbol_row in symbols:
