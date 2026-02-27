@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "newstrade"
+version = "0.1.0"
+description = "Beginner-friendly stock-move + news scoring pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas>=2.2.0",
+    "python-dotenv>=1.0.0",
+    "ib-insync>=0.9.86",
+    "requests>=2.31.0",
+    "openai>=1.30.0",
+    "jsonschema>=4.21.0",
+    "streamlit>=1.34.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+]
+
+[project.scripts]
+newstrade = "newstrade.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["newstrade*"]

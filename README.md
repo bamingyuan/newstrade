@@ -19,7 +19,7 @@ It uses:
 ```bash
 python -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements.txt
+pip install -e ".[dev]"
 ```
 
 Copy `.env.example` to `.env` and set your values:
@@ -33,17 +33,17 @@ copy .env.example .env
 Run one stage at a time:
 
 ```bash
-python -m newstrade.cli scan --window 1d --mode both
-python -m newstrade.cli news --scan-run-id 1
-python -m newstrade.cli score --scan-run-id 1
-python -m newstrade.cli report --scan-run-id 1 --top 30
-python -m newstrade.cli export --scan-run-id 1 --format csv
+newstrade scan --window 1d --mode both
+newstrade news --scan-run-id 1
+newstrade score --scan-run-id 1
+newstrade report --scan-run-id 1 --top 30
+newstrade export --scan-run-id 1 --format csv
 ```
 
 Or run the whole pipeline:
 
 ```bash
-python -m newstrade.cli run-all --window 1d --mode both --top 30
+newstrade run-all --window 1d --mode both --top 30
 ```
 
 ## 3) Dashboard
