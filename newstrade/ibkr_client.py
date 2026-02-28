@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from .market_data import pct_change
@@ -72,14 +72,16 @@ class IbkrClient:
         symbol: str,
         intraday_lookback_days: int,
         intraday_bar_size: str,
+        end_datetime: datetime | None = None,
     ) -> dict[str, Any]:
         self.connect()
         contract = Stock(symbol, "SMART", "USD")
         self.ib.qualifyContracts(contract)
+        end_date_time = _format_ib_end_datetime(end_datetime)
 
         daily_bars = self.ib.reqHistoricalData(
             contract,
-            endDateTime="",
+            endDateTime=end_date_time,
             durationStr="10 D",
             barSizeSetting="1 day",
             whatToShow="TRADES",
@@ -89,7 +91,7 @@ class IbkrClient:
 
         intraday_bars = self.ib.reqHistoricalData(
             contract,
-            endDateTime="",
+            endDateTime=end_date_time,
             durationStr=f"{intraday_lookback_days} D",
             barSizeSetting=intraday_bar_size,
             whatToShow="TRADES",
@@ -100,11 +102,13 @@ class IbkrClient:
         last_price = None
         pct_change_1d = None
         pct_change_intraday = None
+        latest_daily_bar_date: date | None = None
 
         if daily_bars:
             closes = [float(bar.close) for bar in daily_bars if getattr(bar, "close", None) is not None]
             if closes:
                 last_price = closes[-1]
+            latest_daily_bar_date = _parse_bar_date(getattr(daily_bars[-1], "date", None))
             if len(closes) >= 2:
                 pct_change_1d = pct_change(closes[-2], closes[-1])
 
@@ -123,9 +127,37 @@ class IbkrClient:
             "last_price": float(last_price),
             "pct_change_1d": pct_change_1d,
             "pct_change_intraday": pct_change_intraday,
+            "latest_daily_bar_date": latest_daily_bar_date.isoformat() if latest_daily_bar_date else None,
             "price_source_ts_utc": datetime.now(timezone.utc).isoformat(),
         }
 
 
 def create_ibkr_client(host: str, port: int, client_id: int) -> IbkrClient:
     return IbkrClient(host=host, port=port, client_id=client_id)
+
+
+def _format_ib_end_datetime(end_datetime: datetime | None) -> str:
+    if end_datetime is None:
+        return ""
+    return end_datetime.strftime("%Y%m%d %H:%M:%S US/Eastern")
+
+
+def _parse_bar_date(raw: Any) -> date | None:
+    if isinstance(raw, datetime):
+        return raw.date()
+
+    text = str(raw or "").strip()
+    if not text:
+        return None
+
+    digits = "".join(char for char in text if char.isdigit())
+    if len(digits) >= 8:
+        try:
+            return datetime.strptime(digits[:8], "%Y%m%d").date()
+        except ValueError:
+            pass
+
+    try:
+        return datetime.fromisoformat(text).date()
+    except ValueError:
+        return None

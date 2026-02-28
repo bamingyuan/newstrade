@@ -72,6 +72,9 @@ The dashboard is read-only and shows:
 
 - Timestamps are stored in UTC.
 - If OpenAI fails for an article, the pipeline stores a fallback neutral score and continues.
+- Set `SCAN_TIME_TRAVEL=1` and `SCAN_AS_OF_DATE=YYYY-MM-DD` to test scans against a past date (interpreted as US close, 16:00 `America/New_York`).
+- When time travel is enabled, scan mode must be `env` (`newstrade scan --mode env ...`), otherwise the scan fails with a clear message.
+- On weekends/holidays, scan continues and may use the previous trading session for some symbols. A warning is added to the run notes.
 - Set `MARKET_CAP=0` in `.env` to skip market-cap API calls entirely. In that mode, market-cap filters are disabled and `symbols_snapshot.market_cap` stays empty.
 - If market-cap filters are active and cap data is unavailable for a symbol, that symbol is filtered out.
 

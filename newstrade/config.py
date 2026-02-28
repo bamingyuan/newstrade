@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from typing import Mapping
 import os
@@ -24,6 +25,8 @@ class AppConfig:
     scan_window_default: str = "1d"
     intraday_lookback_days: int = 5
     intraday_bar_size: str = "4 hours"
+    scan_time_travel_enabled: bool = False
+    scan_as_of_date: date | None = None
 
     min_pct_change: float = 2.0
     max_pct_change: float = 30.0
@@ -61,6 +64,10 @@ class AppConfig:
             raise ConfigError(f"SCAN_WINDOW_DEFAULT must be one of {sorted(VALID_SCAN_WINDOWS)}")
         if self.log_level.upper() not in VALID_LOG_LEVELS:
             raise ConfigError(f"LOG_LEVEL must be one of {sorted(VALID_LOG_LEVELS)}")
+        if self.scan_time_travel_enabled and self.scan_as_of_date is None:
+            raise ConfigError("SCAN_AS_OF_DATE is required when SCAN_TIME_TRAVEL=1")
+        if self.scan_as_of_date is not None and self.scan_as_of_date > date.today():
+            raise ConfigError("SCAN_AS_OF_DATE cannot be in the future")
 
         if self.min_pct_change < 0:
             raise ConfigError("MIN_PCT_CHANGE must be >= 0")
@@ -120,6 +127,18 @@ def _parse_optional_int(raw: str | None, default: int | None) -> int | None:
     return int(text)
 
 
+def _parse_optional_date(raw: str | None, default: date | None, name: str) -> date | None:
+    if raw is None:
+        return default
+    text = raw.strip()
+    if text == "":
+        return None
+    try:
+        return date.fromisoformat(text)
+    except ValueError as exc:
+        raise ConfigError(f"{name} must be in YYYY-MM-DD format") from exc
+
+
 def _parse_binary_flag(raw: str | None, default: bool, name: str) -> bool:
     if raw is None:
         return default
@@ -144,6 +163,8 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         scan_window_default=scan_window_default,
         intraday_lookback_days=int(mapping.get("INTRADAY_LOOKBACK_DAYS", 5)),
         intraday_bar_size=mapping.get("INTRADAY_BAR_SIZE", "4 hours").strip(),
+        scan_time_travel_enabled=_parse_binary_flag(mapping.get("SCAN_TIME_TRAVEL"), False, "SCAN_TIME_TRAVEL"),
+        scan_as_of_date=_parse_optional_date(mapping.get("SCAN_AS_OF_DATE"), None, "SCAN_AS_OF_DATE"),
         min_pct_change=float(mapping.get("MIN_PCT_CHANGE", 2.0)),
         max_pct_change=float(mapping.get("MAX_PCT_CHANGE", 30.0)),
         min_price=_parse_optional_float(mapping.get("MIN_PRICE"), 3.0),

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, time
 import json
 from typing import Any, Callable
+from zoneinfo import ZoneInfo
 
 from .aggregate import compute_symbol_aggregate
 from .ai_scoring import AIScorer, AIScorerConfig, build_failed_score
@@ -40,6 +42,13 @@ def _resolve_symbol_mode(config: AppConfig, mode: str | None) -> str:
     return (mode or config.symbol_mode).strip().lower()
 
 
+def _resolve_time_travel_end_datetime(config: AppConfig) -> datetime | None:
+    if not config.scan_time_travel_enabled or config.scan_as_of_date is None:
+        return None
+    ny_tz = ZoneInfo("America/New_York")
+    return datetime.combine(config.scan_as_of_date, time(hour=16, minute=0), tzinfo=ny_tz)
+
+
 def _collect_symbols(config: AppConfig, symbol_mode: str, ibkr_client: Any) -> list[str]:
     symbols: set[str] = set()
 
@@ -62,6 +71,7 @@ def run_scan(
 ) -> int:
     scan_window = _resolve_scan_window(config, window)
     symbol_mode = _resolve_symbol_mode(config, mode)
+    end_datetime = _resolve_time_travel_end_datetime(config)
 
     conn = connect_db(config.db_path)
     init_db(conn)
@@ -80,6 +90,9 @@ def run_scan(
     ibkr_client = ibkr_factory(config.ibkr_host, config.ibkr_port, config.ibkr_client_id)
 
     try:
+        if config.scan_time_travel_enabled and symbol_mode != "env":
+            raise ValueError("SCAN_TIME_TRAVEL=1 requires symbol mode 'env'. Use --mode env or SYMBOL_MODE=env.")
+
         ibkr_client.connect()
         symbols = _collect_symbols(config, symbol_mode, ibkr_client)
 
@@ -108,6 +121,7 @@ def run_scan(
         snapshot_rows: list[dict[str, Any]] = []
         passed_count = 0
         failed_details: list[str] = []
+        time_travel_warnings: list[str] = []
 
         for symbol in symbols:
             try:
@@ -115,6 +129,7 @@ def run_scan(
                     symbol=symbol,
                     intraday_lookback_days=config.intraday_lookback_days,
                     intraday_bar_size=config.intraday_bar_size,
+                    end_datetime=end_datetime,
                 )
             except Exception as exc:  # noqa: BLE001
                 failed_details.append(f"{symbol}: {exc}")
@@ -131,6 +146,14 @@ def run_scan(
                     }
                 )
                 continue
+
+            if config.scan_time_travel_enabled and config.scan_as_of_date is not None:
+                latest_daily_bar_date = str(snapshot.get("latest_daily_bar_date") or "").strip()
+                requested_date = config.scan_as_of_date.isoformat()
+                if latest_daily_bar_date and latest_daily_bar_date < requested_date:
+                    time_travel_warnings.append(
+                        f"{symbol}: requested {requested_date}, latest available {latest_daily_bar_date}"
+                    )
 
             snapshot["market_cap"] = market_caps.get(symbol)
             passed, reason = passes_symbol_filters(snapshot, filter_config, scan_window)
@@ -155,6 +178,14 @@ def run_scan(
         insert_symbol_snapshots(conn, snapshot_rows)
 
         notes = f"Processed {len(symbols)} symbols, passed {passed_count}."
+        if config.scan_time_travel_enabled and config.scan_as_of_date is not None:
+            notes += f" Time-travel enabled for {config.scan_as_of_date.isoformat()} at US close."
+        if time_travel_warnings:
+            sample = "; ".join(time_travel_warnings[:3])
+            remaining = len(time_travel_warnings) - 3
+            if remaining > 0:
+                sample += f"; +{remaining} more"
+            notes += f" Some symbols returned prior sessions: {sample}."
         if market_cap_disabled_by_config:
             notes += " Market-cap fetching disabled via MARKET_CAP=0."
         if market_cap_unavailable_globally:
