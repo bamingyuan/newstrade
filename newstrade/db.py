@@ -75,6 +75,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             openai_model TEXT NOT NULL,
             summary TEXT NOT NULL,
             impact_score INTEGER NOT NULL,
+            impact_direction TEXT NOT NULL CHECK (impact_direction IN ('bearish', 'neutral', 'bullish')),
             seriousness_score INTEGER NOT NULL,
             confidence INTEGER NOT NULL,
             impact_horizon TEXT NOT NULL,
@@ -119,6 +120,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "article_scores", "completion_tokens", "INTEGER")
     _ensure_column(conn, "article_scores", "total_tokens", "INTEGER")
     _ensure_column(conn, "article_scores", "reasoning_tokens", "INTEGER")
+    _ensure_column(conn, "article_scores", "impact_direction", "TEXT NOT NULL DEFAULT 'neutral'")
 
     conn.commit()
 
@@ -243,10 +245,10 @@ def insert_article_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     conn.execute(
         """
         INSERT OR REPLACE INTO article_scores (
-            scan_run_id, symbol, article_id, openai_model, summary, impact_score, seriousness_score,
+            scan_run_id, symbol, article_id, openai_model, summary, impact_score, impact_direction, seriousness_score,
             confidence, impact_horizon, reason_tags_json, is_material_news, scored_ts_utc,
             prompt_tokens, completion_tokens, total_tokens, reasoning_tokens, error_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             row["scan_run_id"],
@@ -255,6 +257,7 @@ def insert_article_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             row["openai_model"],
             row["summary"],
             row["impact_score"],
+            row["impact_direction"],
             row["seriousness_score"],
             row["confidence"],
             row["impact_horizon"],

@@ -72,6 +72,8 @@ The dashboard is read-only and shows:
 
 - Timestamps are stored in UTC.
 - If OpenAI fails for an article, the pipeline stores a fallback neutral score and continues.
+- Impact contract is deterministic: `impact_direction` is one of `bearish|neutral|bullish`, and stored `impact_score` is normalized to match direction (`bearish<0`, `neutral=0`, `bullish>0`) on a `-100..100` scale.
+- Magnitude guide used in scoring prompt: `1-20 mild`, `21-50 moderate`, `51-80 strong`, `81-100 extreme`.
 - `newstrade score ...` now prints per-article token usage (`prompt`, `completion`, `total`, `reasoning`) for hotspot analysis.
 - Tune OpenAI output/cost behavior with `.env`: `OPENAI_MAX_COMPLETION_TOKENS` and `OPENAI_SCORE_RETRIES`.
 - For reasoning-heavy models (for example `gpt-5-mini`), `OPENAI_MAX_COMPLETION_TOKENS` also covers reasoning tokens. If set too low, the model may return empty content.

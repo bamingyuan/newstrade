@@ -35,6 +35,7 @@ class ArticleScore:
     openai_model: str
     summary: str
     impact_score: int
+    impact_direction: str
     seriousness_score: int
     confidence: int
     impact_horizon: str

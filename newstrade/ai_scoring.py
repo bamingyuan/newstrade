@@ -27,12 +27,19 @@ ALLOWED_REASON_TAGS = [
     "other",
 ]
 
+ALLOWED_IMPACT_DIRECTIONS = [
+    "bearish",
+    "neutral",
+    "bullish",
+]
+
 SCORING_JSON_SCHEMA: dict[str, Any] = {
     "type": "object",
     "additionalProperties": False,
     "required": [
         "summary",
         "impact_score",
+        "impact_direction",
         "seriousness_score",
         "confidence",
         "impact_horizon",
@@ -42,6 +49,7 @@ SCORING_JSON_SCHEMA: dict[str, Any] = {
     "properties": {
         "summary": {"type": "string", "maxLength": 400},
         "impact_score": {"type": "integer", "minimum": -100, "maximum": 100},
+        "impact_direction": {"type": "string", "enum": ALLOWED_IMPACT_DIRECTIONS},
         "seriousness_score": {"type": "integer", "minimum": 0, "maximum": 100},
         "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
         "impact_horizon": {
@@ -68,6 +76,7 @@ OPENAI_SCORING_JSON_SCHEMA: dict[str, Any] = {
     "properties": {
         "summary": {"type": "string", "maxLength": 400},
         "impact_score": {"type": "integer", "minimum": -100, "maximum": 100},
+        "impact_direction": {"type": "string", "enum": ALLOWED_IMPACT_DIRECTIONS},
         "seriousness_score": {"type": "integer", "minimum": 0, "maximum": 100},
         "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
         "impact_horizon": {"type": "string", "enum": ["immediate", "short_term", "medium_term"]},
@@ -115,7 +124,10 @@ class AIScorer:
     def _build_messages(self, article: Mapping[str, Any]) -> list[dict[str, str]]:
         system = (
             "You are a financial news analyst. Return only JSON matching the schema. "
-            "Keep summary concise and factual."
+            "Keep summary concise and factual. "
+            "Impact scoring rubric: -100 very bearish, 0 neutral, +100 very bullish. "
+            "Direction rule: bearish must have negative impact_score, neutral must be 0, bullish must be positive. "
+            "Magnitude guide: 1-20 mild, 21-50 moderate, 51-80 strong, 81-100 extreme."
         )
         user = (
             "Score this stock news item.\n"
@@ -124,7 +136,8 @@ class AIScorer:
             f"Source: {article['source']}\n"
             f"Published UTC: {article.get('published_ts_utc', '')}\n"
             f"URL: {article['url']}\n\n"
-            "Interpret likely directional effect for the stock only."
+            "Interpret likely directional effect for the stock only. "
+            "Return impact_direction as one of bearish/neutral/bullish."
         )
         return [
             {"role": "system", "content": system},
@@ -249,6 +262,7 @@ def validate_scoring_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "summary": summary,
         "impact_score": int(normalized_payload["impact_score"]),
+        "impact_direction": str(normalized_payload["impact_direction"]).strip().lower(),
         "seriousness_score": int(normalized_payload["seriousness_score"]),
         "confidence": int(normalized_payload["confidence"]),
         "impact_horizon": str(normalized_payload["impact_horizon"]),
@@ -265,6 +279,7 @@ def build_failed_score(
     return {
         "summary": "",
         "impact_score": 0,
+        "impact_direction": "neutral",
         "seriousness_score": 0,
         "confidence": 0,
         "impact_horizon": "short_term",

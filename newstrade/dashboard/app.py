@@ -42,6 +42,7 @@ def load_symbol_detail(conn: sqlite3.Connection, scan_run_id: int, symbol: str) 
             n.url,
             a.summary,
             a.impact_score,
+            a.impact_direction,
             a.seriousness_score,
             a.confidence,
             a.reason_tags_json,

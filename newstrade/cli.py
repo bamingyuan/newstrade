@@ -65,10 +65,12 @@ def main(argv: list[str] | None = None) -> int:
             symbol = str(event.get("symbol", ""))
             url = str(event.get("url", ""))
             title = str(event.get("title", ""))
+            impact_direction = str(event.get("impact_direction", ""))
             print(f"[{current}/{total}] {status}")
             print(f"symbol: {symbol}")
             print(f"url: {url}")
             print(f"title: {title}")
+            print(f"impact_direction: {impact_direction}")
             print(
                 "tokens: "
                 f"prompt={event.get('prompt_tokens', '')} "

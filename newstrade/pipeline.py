@@ -34,6 +34,25 @@ class PipelineError(RuntimeError):
     """Raised when a pipeline stage cannot complete."""
 
 
+def _normalize_impact_from_direction(scored: dict[str, Any]) -> dict[str, Any]:
+    direction = str(scored.get("impact_direction", "neutral")).strip().lower()
+    raw_score = int(scored.get("impact_score", 0))
+    magnitude = min(100, abs(raw_score))
+
+    if direction == "bearish":
+        normalized_score = -max(1, magnitude)
+    elif direction == "bullish":
+        normalized_score = max(1, magnitude)
+    else:
+        direction = "neutral"
+        normalized_score = 0
+
+    normalized = dict(scored)
+    normalized["impact_direction"] = direction
+    normalized["impact_score"] = normalized_score
+    return normalized
+
+
 def _resolve_scan_window(config: AppConfig, window: str | None) -> str:
     return (window or config.scan_window_default).strip().lower()
 
@@ -304,6 +323,7 @@ def run_score(
         except Exception as exc:  # noqa: BLE001
             scored = build_failed_score(str(exc), usage=getattr(exc, "usage", None))
             error_message = str(exc)
+        scored = _normalize_impact_from_direction(scored)
 
         insert_article_score(
             conn,
@@ -314,6 +334,7 @@ def run_score(
                 "openai_model": config.openai_model,
                 "summary": scored["summary"],
                 "impact_score": scored["impact_score"],
+                "impact_direction": scored["impact_direction"],
                 "seriousness_score": scored["seriousness_score"],
                 "confidence": scored["confidence"],
                 "impact_horizon": scored["impact_horizon"],
@@ -337,6 +358,7 @@ def run_score(
                     "symbol": article["symbol"],
                     "url": article["url"],
                     "title": article["title"],
+                    "impact_direction": scored["impact_direction"],
                     "status": "error" if error_message else "ok",
                     "error_message": error_message,
                     "prompt_tokens": scored.get("prompt_tokens"),
