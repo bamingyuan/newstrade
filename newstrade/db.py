@@ -49,6 +49,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             pct_change_intraday REAL,
             market_cap REAL,
             price_source_ts_utc TEXT NOT NULL,
+            price_as_of_ts_utc TEXT NOT NULL,
             passed_filters INTEGER NOT NULL,
             FOREIGN KEY(scan_run_id) REFERENCES scan_runs(scan_run_id)
         );
@@ -121,6 +122,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "article_scores", "total_tokens", "INTEGER")
     _ensure_column(conn, "article_scores", "reasoning_tokens", "INTEGER")
     _ensure_column(conn, "article_scores", "impact_direction", "TEXT NOT NULL DEFAULT 'neutral'")
+    _ensure_column(conn, "symbols_snapshot", "price_as_of_ts_utc", "TEXT NOT NULL DEFAULT ''")
 
     conn.commit()
 
@@ -160,8 +162,8 @@ def insert_symbol_snapshots(conn: sqlite3.Connection, rows: Iterable[dict[str, A
         """
         INSERT INTO symbols_snapshot (
             scan_run_id, symbol, last_price, pct_change_1d, pct_change_intraday, market_cap,
-            price_source_ts_utc, passed_filters
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            price_source_ts_utc, price_as_of_ts_utc, passed_filters
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -172,6 +174,7 @@ def insert_symbol_snapshots(conn: sqlite3.Connection, rows: Iterable[dict[str, A
                 row.get("pct_change_intraday"),
                 row.get("market_cap"),
                 row["price_source_ts_utc"],
+                row["price_as_of_ts_utc"],
                 int(bool(row.get("passed_filters", False))),
             )
             for row in rows
@@ -339,6 +342,7 @@ def get_symbol_scores_report(conn: sqlite3.Connection, scan_run_id: int) -> list
                 ss.pct_change_1d,
                 ss.pct_change_intraday,
                 ss.market_cap,
+                ss.price_as_of_ts_utc,
                 s.article_count,
                 s.weighted_impact_score,
                 s.weighted_seriousness_score,

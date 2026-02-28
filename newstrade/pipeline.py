@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
-from datetime import datetime, time
+from datetime import datetime, time, timezone
 import json
+import inspect
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -26,7 +27,7 @@ from .db import (
 from .ibkr_client import create_ibkr_client
 from .market_data import passes_symbol_filters
 from .reporting import build_report_dataframe, report_to_console
-from .time_utils import utc_now_iso
+from .time_utils import parse_iso_utc, utc_now_iso
 from .yahoo_news import fetch_market_caps, fetch_symbol_news
 
 
@@ -66,6 +67,15 @@ def _resolve_time_travel_end_datetime(config: AppConfig) -> datetime | None:
         return None
     ny_tz = ZoneInfo("America/New_York")
     return datetime.combine(config.scan_as_of_date, time(hour=16, minute=0), tzinfo=ny_tz)
+
+
+def _resolve_price_as_of_ts_utc(snapshot: dict[str, Any], end_datetime: datetime | None) -> str:
+    value = str(snapshot.get("price_as_of_ts_utc") or "").strip()
+    if value:
+        return value
+    if end_datetime is not None:
+        return end_datetime.astimezone(timezone.utc).isoformat()
+    return utc_now_iso()
 
 
 def _collect_symbols(config: AppConfig, symbol_mode: str, ibkr_client: Any) -> list[str]:
@@ -161,6 +171,11 @@ def run_scan(
                         "pct_change_intraday": None,
                         "market_cap": market_caps.get(symbol),
                         "price_source_ts_utc": utc_now_iso(),
+                        "price_as_of_ts_utc": (
+                            end_datetime.astimezone(timezone.utc).isoformat()
+                            if end_datetime is not None
+                            else utc_now_iso()
+                        ),
                         "passed_filters": False,
                     }
                 )
@@ -190,6 +205,7 @@ def run_scan(
                     "pct_change_intraday": snapshot.get("pct_change_intraday"),
                     "market_cap": snapshot.get("market_cap"),
                     "price_source_ts_utc": snapshot.get("price_source_ts_utc", utc_now_iso()),
+                    "price_as_of_ts_utc": _resolve_price_as_of_ts_utc(snapshot, end_datetime),
                     "passed_filters": passed,
                 }
             )
@@ -245,23 +261,38 @@ def run_news(
         return 0
 
     article_rows: list[dict[str, Any]] = []
+    as_of_datetime = _resolve_time_travel_end_datetime(config)
+    as_of_datetime_utc = as_of_datetime.astimezone(timezone.utc) if as_of_datetime is not None else None
+    try:
+        news_fetcher_params = set(inspect.signature(news_fetcher).parameters)
+    except (TypeError, ValueError):
+        news_fetcher_params = set()
 
     for symbol_row in symbols:
         symbol = str(symbol_row["symbol"])
         existing_keys = list_existing_article_dedup_keys(conn, scan_run_id, symbol)
 
         try:
-            fetched = news_fetcher(
-                symbol=symbol,
-                lookback_hours=config.news_lookback_hours,
-                max_articles=config.max_news_articles_per_symbol,
-                region=config.yahoo_rss_region,
-                lang=config.yahoo_rss_lang,
-            )
+            fetch_kwargs: dict[str, Any] = {
+                "symbol": symbol,
+                "lookback_hours": config.news_lookback_hours,
+                "max_articles": config.max_news_articles_per_symbol,
+                "region": config.yahoo_rss_region,
+                "lang": config.yahoo_rss_lang,
+            }
+            if "as_of_datetime" in news_fetcher_params:
+                fetch_kwargs["as_of_datetime"] = as_of_datetime
+            fetched = news_fetcher(**fetch_kwargs)
         except Exception:  # noqa: BLE001
             continue
 
         for item in fetched:
+            published_ts_utc = str(item.get("published_ts_utc") or "").strip()
+            if as_of_datetime_utc is not None and published_ts_utc:
+                published_dt = parse_iso_utc(published_ts_utc)
+                if published_dt is not None and published_dt > as_of_datetime_utc:
+                    continue
+
             dedup_key = item["dedup_key"]
             if dedup_key in existing_keys:
                 continue
@@ -273,7 +304,7 @@ def run_news(
                     "url": item["url"],
                     "title": item["title"],
                     "source": item["source"],
-                    "published_ts_utc": item.get("published_ts_utc") or "",
+                    "published_ts_utc": published_ts_utc,
                     "rss_fetched_ts_utc": item["rss_fetched_ts_utc"],
                     "dedup_key": dedup_key,
                 }

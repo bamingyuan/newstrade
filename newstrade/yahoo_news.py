@@ -37,10 +37,16 @@ def fetch_symbol_news(
     max_articles: int,
     region: str,
     lang: str,
+    as_of_datetime: datetime | None = None,
     timeout_seconds: int = 15,
 ) -> list[dict[str, str]]:
     rss_url = f"https://feeds.finance.yahoo.com/rss/2.0/headline?s={symbol}&region={region}&lang={lang}"
-    now = utc_now()
+    if as_of_datetime is None:
+        now = utc_now()
+    elif as_of_datetime.tzinfo is None:
+        now = as_of_datetime.replace(tzinfo=timezone.utc)
+    else:
+        now = as_of_datetime.astimezone(timezone.utc)
     cutoff = now - timedelta(hours=lookback_hours)
 
     headers = {
@@ -90,7 +96,7 @@ def fetch_symbol_news(
                 "updated": item.findtext("pubDate", default=""),
             }
         )
-        if published_dt and published_dt < cutoff:
+        if published_dt and (published_dt < cutoff or published_dt > now):
             continue
 
         seen.add(dedup_key)

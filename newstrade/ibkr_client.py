@@ -129,6 +129,11 @@ class IbkrClient:
             "pct_change_intraday": pct_change_intraday,
             "latest_daily_bar_date": latest_daily_bar_date.isoformat() if latest_daily_bar_date else None,
             "price_source_ts_utc": datetime.now(timezone.utc).isoformat(),
+            "price_as_of_ts_utc": (
+                end_datetime.astimezone(timezone.utc).isoformat()
+                if end_datetime is not None
+                else datetime.now(timezone.utc).isoformat()
+            ),
         }
 
 
