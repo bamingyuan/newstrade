@@ -24,6 +24,9 @@ ALLOWED_REASON_TAGS = [
     "product",
     "management",
     "analyst_action",
+    "capital_allocation",
+    "partnership_or_contract",
+    "operations",
     "other",
 ]
 
