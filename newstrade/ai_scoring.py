@@ -66,7 +66,7 @@ OPENAI_SCORING_JSON_SCHEMA: dict[str, Any] = {
     "additionalProperties": False,
     "required": SCORING_JSON_SCHEMA["required"],
     "properties": {
-        "summary": {"type": "string"},
+        "summary": {"type": "string", "maxLength": 400},
         "impact_score": {"type": "integer", "minimum": -100, "maximum": 100},
         "seriousness_score": {"type": "integer", "minimum": 0, "maximum": 100},
         "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
@@ -85,6 +85,10 @@ OPENAI_SCORING_JSON_SCHEMA: dict[str, Any] = {
 class AIScoringError(RuntimeError):
     """Raised when AI scoring fails after retries."""
 
+    def __init__(self, message: str, usage: Mapping[str, int | None] | None = None) -> None:
+        super().__init__(message)
+        self.usage = dict(usage or {})
+
 
 @dataclass
 class AIScorerConfig:
@@ -92,6 +96,7 @@ class AIScorerConfig:
     model: str
     timeout_seconds: int
     temperature: float
+    max_completion_tokens: int | None
 
 
 class AIScorer:
@@ -126,9 +131,39 @@ class AIScorer:
             {"role": "user", "content": user},
         ]
 
+    @staticmethod
+    def _extract_usage(completion: Any) -> dict[str, int | None]:
+        usage = getattr(completion, "usage", None)
+
+        def _read(container: Any, key: str) -> Any:
+            if container is None:
+                return None
+            if isinstance(container, Mapping):
+                return container.get(key)
+            return getattr(container, key, None)
+
+        def _as_int(value: Any) -> int | None:
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        completion_details = _read(usage, "completion_tokens_details")
+        reasoning_tokens = _read(completion_details, "reasoning_tokens")
+
+        return {
+            "prompt_tokens": _as_int(_read(usage, "prompt_tokens")),
+            "completion_tokens": _as_int(_read(usage, "completion_tokens")),
+            "total_tokens": _as_int(_read(usage, "total_tokens")),
+            "reasoning_tokens": _as_int(reasoning_tokens),
+        }
+
     def score_article(self, article: Mapping[str, Any], retries: int = 2) -> dict[str, Any]:
         messages = self._build_messages(article)
         last_error: Exception | None = None
+        last_usage: dict[str, int | None] | None = None
         send_temperature = self._model_supports_custom_temperature()
         use_json_schema = True
 
@@ -151,15 +186,33 @@ class AIScorer:
                     request_args["response_format"] = {"type": "json_object"}
                 if send_temperature:
                     request_args["temperature"] = self.cfg.temperature
+                if self.cfg.max_completion_tokens is not None:
+                    request_args["max_completion_tokens"] = self.cfg.max_completion_tokens
 
                 completion = self.client.chat.completions.create(
                     **request_args,
                 )
-                content = completion.choices[0].message.content or "{}"
-                payload = json.loads(content)
+                usage = self._extract_usage(completion)
+                last_usage = usage
+                content = (completion.choices[0].message.content or "").strip()
+                if not content:
+                    raise AIScoringError(
+                        "AI returned empty content. OPENAI_MAX_COMPLETION_TOKENS may be too low for this model.",
+                        usage=usage,
+                    )
+                try:
+                    payload = json.loads(content)
+                except json.JSONDecodeError as exc:
+                    raise AIScoringError(
+                        "AI returned invalid JSON. Response may be truncated by OPENAI_MAX_COMPLETION_TOKENS.",
+                        usage=usage,
+                    ) from exc
                 validated = validate_scoring_payload(payload)
+                validated.update(usage)
                 return validated
             except Exception as exc:  # intentionally broad for external API errors
+                if isinstance(exc, AIScoringError) and last_usage:
+                    exc = AIScoringError(str(exc), usage=last_usage)
                 message = str(exc)
                 if use_json_schema and "response_format" in message:
                     # Fallback for models/endpoints that do not support strict schema mode.
@@ -175,6 +228,8 @@ class AIScorer:
                     continue
                 break
 
+        if isinstance(last_error, AIScoringError):
+            raise last_error
         raise AIScoringError(str(last_error))
 
 
@@ -202,7 +257,11 @@ def validate_scoring_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_failed_score(error_message: str) -> dict[str, Any]:
+def build_failed_score(
+    error_message: str,
+    usage: Mapping[str, int | None] | None = None,
+) -> dict[str, Any]:
+    usage_map = dict(usage or {})
     return {
         "summary": "",
         "impact_score": 0,
@@ -213,4 +272,8 @@ def build_failed_score(error_message: str) -> dict[str, Any]:
         "is_material_news": False,
         "error_message": error_message,
         "scored_ts_utc": datetime.now(timezone.utc).isoformat(),
+        "prompt_tokens": usage_map.get("prompt_tokens"),
+        "completion_tokens": usage_map.get("completion_tokens"),
+        "total_tokens": usage_map.get("total_tokens"),
+        "reasoning_tokens": usage_map.get("reasoning_tokens"),
     }

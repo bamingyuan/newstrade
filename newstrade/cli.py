@@ -69,6 +69,13 @@ def main(argv: list[str] | None = None) -> int:
             print(f"symbol: {symbol}")
             print(f"url: {url}")
             print(f"title: {title}")
+            print(
+                "tokens: "
+                f"prompt={event.get('prompt_tokens', '')} "
+                f"completion={event.get('completion_tokens', '')} "
+                f"total={event.get('total_tokens', '')} "
+                f"reasoning={event.get('reasoning_tokens', '')}"
+            )
             if status == "ERROR":
                 print(f"error: {event.get('error_message', '')}")
             print("")

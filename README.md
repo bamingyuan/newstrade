@@ -72,6 +72,9 @@ The dashboard is read-only and shows:
 
 - Timestamps are stored in UTC.
 - If OpenAI fails for an article, the pipeline stores a fallback neutral score and continues.
+- `newstrade score ...` now prints per-article token usage (`prompt`, `completion`, `total`, `reasoning`) for hotspot analysis.
+- Tune OpenAI output/cost behavior with `.env`: `OPENAI_MAX_COMPLETION_TOKENS` and `OPENAI_SCORE_RETRIES`.
+- For reasoning-heavy models (for example `gpt-5-mini`), `OPENAI_MAX_COMPLETION_TOKENS` also covers reasoning tokens. If set too low, the model may return empty content.
 - Set `SCAN_TIME_TRAVEL=1` and `SCAN_AS_OF_DATE=YYYY-MM-DD` to test scans against a past date (interpreted as US close, 16:00 `America/New_York`).
 - When time travel is enabled, scan mode must be `env` (`newstrade scan --mode env ...`), otherwise the scan fails with a clear message.
 - On weekends/holidays, scan continues and may use the previous trading session for some symbols. A warning is added to the run notes.

@@ -45,6 +45,8 @@ class AppConfig:
     openai_model: str = "gpt-4.1-mini"
     openai_timeout_seconds: int = 30
     openai_temperature: float = 0.0
+    openai_max_completion_tokens: int | None = 300
+    openai_score_retries: int = 1
 
     ibkr_host: str = "127.0.0.1"
     ibkr_port: int = 4002
@@ -91,6 +93,10 @@ class AppConfig:
             raise ConfigError("INTRADAY_LOOKBACK_DAYS must be > 0")
         if self.openai_timeout_seconds <= 0:
             raise ConfigError("OPENAI_TIMEOUT_SECONDS must be > 0")
+        if self.openai_max_completion_tokens is not None and self.openai_max_completion_tokens <= 0:
+            raise ConfigError("OPENAI_MAX_COMPLETION_TOKENS must be > 0 when set")
+        if self.openai_score_retries < 0:
+            raise ConfigError("OPENAI_SCORE_RETRIES must be >= 0")
 
     @property
     def db_path_obj(self) -> Path:
@@ -180,6 +186,8 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         openai_model=mapping.get("OPENAI_MODEL", "gpt-4.1-mini").strip(),
         openai_timeout_seconds=int(mapping.get("OPENAI_TIMEOUT_SECONDS", 30)),
         openai_temperature=float(mapping.get("OPENAI_TEMPERATURE", 0.0)),
+        openai_max_completion_tokens=_parse_optional_int(mapping.get("OPENAI_MAX_COMPLETION_TOKENS"), 300),
+        openai_score_retries=int(mapping.get("OPENAI_SCORE_RETRIES", 1)),
         ibkr_host=mapping.get("IBKR_HOST", "127.0.0.1").strip(),
         ibkr_port=int(mapping.get("IBKR_PORT", 4002)),
         ibkr_client_id=int(mapping.get("IBKR_CLIENT_ID", 37)),

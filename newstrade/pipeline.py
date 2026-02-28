@@ -281,6 +281,7 @@ def run_score(
                 model=config.openai_model,
                 timeout_seconds=config.openai_timeout_seconds,
                 temperature=config.openai_temperature,
+                max_completion_tokens=config.openai_max_completion_tokens,
             )
         )
 
@@ -298,10 +299,10 @@ def run_score(
         }
 
         try:
-            scored = scorer.score_article(article_payload, retries=2)
+            scored = scorer.score_article(article_payload, retries=config.openai_score_retries)
             error_message = None
         except Exception as exc:  # noqa: BLE001
-            scored = build_failed_score(str(exc))
+            scored = build_failed_score(str(exc), usage=getattr(exc, "usage", None))
             error_message = str(exc)
 
         insert_article_score(
@@ -320,6 +321,10 @@ def run_score(
                 "is_material_news": scored["is_material_news"],
                 "scored_ts_utc": scored.get("scored_ts_utc", utc_now_iso()),
                 "error_message": error_message,
+                "prompt_tokens": scored.get("prompt_tokens"),
+                "completion_tokens": scored.get("completion_tokens"),
+                "total_tokens": scored.get("total_tokens"),
+                "reasoning_tokens": scored.get("reasoning_tokens"),
             },
         )
         scored_count += 1
@@ -334,6 +339,10 @@ def run_score(
                     "title": article["title"],
                     "status": "error" if error_message else "ok",
                     "error_message": error_message,
+                    "prompt_tokens": scored.get("prompt_tokens"),
+                    "completion_tokens": scored.get("completion_tokens"),
+                    "total_tokens": scored.get("total_tokens"),
+                    "reasoning_tokens": scored.get("reasoning_tokens"),
                 }
             )
 

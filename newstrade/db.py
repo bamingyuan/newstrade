@@ -8,9 +8,20 @@ from typing import Any, Iterable
 def connect_db(db_path: str) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     return conn
+
+
+def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl_type: str) -> None:
+    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
+    existing_columns = {
+        str(row["name"]) if isinstance(row, sqlite3.Row) else str(row[1])
+        for row in rows
+    }
+    if column in existing_columns:
+        return
+    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}")
 
 
 def init_db(conn: sqlite3.Connection) -> None:
@@ -70,6 +81,10 @@ def init_db(conn: sqlite3.Connection) -> None:
             reason_tags_json TEXT NOT NULL,
             is_material_news INTEGER NOT NULL,
             scored_ts_utc TEXT NOT NULL,
+            prompt_tokens INTEGER,
+            completion_tokens INTEGER,
+            total_tokens INTEGER,
+            reasoning_tokens INTEGER,
             error_message TEXT,
             FOREIGN KEY(scan_run_id) REFERENCES scan_runs(scan_run_id),
             FOREIGN KEY(article_id) REFERENCES news_articles(article_id),
@@ -99,6 +114,12 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         """
     )
+
+    _ensure_column(conn, "article_scores", "prompt_tokens", "INTEGER")
+    _ensure_column(conn, "article_scores", "completion_tokens", "INTEGER")
+    _ensure_column(conn, "article_scores", "total_tokens", "INTEGER")
+    _ensure_column(conn, "article_scores", "reasoning_tokens", "INTEGER")
+
     conn.commit()
 
 
@@ -223,8 +244,9 @@ def insert_article_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
         """
         INSERT OR REPLACE INTO article_scores (
             scan_run_id, symbol, article_id, openai_model, summary, impact_score, seriousness_score,
-            confidence, impact_horizon, reason_tags_json, is_material_news, scored_ts_utc, error_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            confidence, impact_horizon, reason_tags_json, is_material_news, scored_ts_utc,
+            prompt_tokens, completion_tokens, total_tokens, reasoning_tokens, error_message
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             row["scan_run_id"],
@@ -239,6 +261,10 @@ def insert_article_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             row["reason_tags_json"],
             int(bool(row["is_material_news"])),
             row["scored_ts_utc"],
+            row.get("prompt_tokens"),
+            row.get("completion_tokens"),
+            row.get("total_tokens"),
+            row.get("reasoning_tokens"),
             row.get("error_message"),
         ),
     )
