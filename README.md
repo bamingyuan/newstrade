@@ -91,6 +91,7 @@ The dashboard is read-only and shows:
 - On weekends/holidays, scan continues and may use the previous trading session for some symbols. A warning is added to the run notes.
 - Set `MARKET_CAP=0` in `.env` to skip market-cap API calls entirely. In that mode, market-cap filters are disabled and `symbols_snapshot.market_cap` stays empty.
 - If market-cap filters are active and cap data is unavailable for a symbol, that symbol is filtered out.
+- Set `LOG_LEVEL=DEBUG` to print transparent IBKR scan logs (connect params, scanner request args, historical-data request args, bar counts, and per-symbol filter outcomes).
 
 ## 6) Tests
 

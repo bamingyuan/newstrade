@@ -1,12 +1,26 @@
 from __future__ import annotations
 
 import argparse
+import logging
 import sys
 
 from .config import load_config
 from .db import connect_db, get_latest_scan_run_ids, init_db
 from .pipeline import run_all, run_news, run_report, run_scan, run_score
 from .reporting import export_report_csv
+
+
+def configure_logging(level_name: str) -> None:
+    level = getattr(logging, level_name.upper(), logging.INFO)
+    root_logger = logging.getLogger()
+    if root_logger.handlers:
+        root_logger.setLevel(level)
+        return
+    logging.basicConfig(
+        level=level,
+        format="%(asctime)s %(levelname)s %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -60,6 +74,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     config = load_config(args.env_file)
+    configure_logging(config.log_level)
 
     if args.command == "scan":
         run_id = run_scan(config=config, window=args.window, mode=args.mode)

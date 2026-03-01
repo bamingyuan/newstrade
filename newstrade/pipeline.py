@@ -4,6 +4,7 @@ from dataclasses import replace
 from datetime import datetime, time, timezone
 import json
 import inspect
+import logging
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
@@ -30,6 +31,9 @@ from .market_data import passes_symbol_filters
 from .reporting import build_report_dataframe, report_to_console
 from .time_utils import parse_iso_utc, utc_now_iso
 from .yahoo_news import fetch_market_caps, fetch_symbol_news
+
+
+logger = logging.getLogger(__name__)
 
 
 class PipelineError(RuntimeError):
@@ -141,6 +145,22 @@ def run_scan(
     )
 
     ibkr_client = ibkr_factory(config.ibkr_host, config.ibkr_port, config.ibkr_client_id)
+    logger.info(
+        "Starting scan run_id=%s window=%s mode=%s",
+        scan_run_id,
+        scan_window,
+        symbol_mode,
+    )
+    logger.debug(
+        "Scan run_id=%s config ibkr_host=%s ibkr_port=%s ibkr_client_id=%s intraday_lookback_days=%s intraday_bar_size=%s end_datetime=%s",
+        scan_run_id,
+        config.ibkr_host,
+        config.ibkr_port,
+        config.ibkr_client_id,
+        config.intraday_lookback_days,
+        config.intraday_bar_size,
+        end_datetime.isoformat() if end_datetime is not None else None,
+    )
 
     try:
         if config.scan_time_travel_enabled and symbol_mode != "env":
@@ -148,9 +168,12 @@ def run_scan(
 
         ibkr_client.connect()
         symbols = _collect_symbols(config, symbol_mode, ibkr_client)
+        logger.info("Resolved %s symbols for scan run_id=%s", len(symbols), scan_run_id)
+        logger.debug("Scan run_id=%s symbols=%s", scan_run_id, symbols)
 
         if not symbols:
             update_scan_run_status(conn, scan_run_id, "completed", "No symbols resolved")
+            logger.info("Scan run_id=%s completed with no symbols", scan_run_id)
             return scan_run_id
 
         market_cap_unavailable_globally = False
@@ -177,6 +200,7 @@ def run_scan(
         time_travel_warnings: list[str] = []
 
         for symbol in symbols:
+            logger.debug("Fetching snapshot run_id=%s symbol=%s", scan_run_id, symbol)
             try:
                 snapshot = ibkr_client.fetch_price_snapshot(
                     symbol=symbol,
@@ -185,6 +209,7 @@ def run_scan(
                     end_datetime=end_datetime,
                 )
             except Exception as exc:  # noqa: BLE001
+                logger.exception("Snapshot fetch failed run_id=%s symbol=%s", scan_run_id, symbol)
                 failed_details.append(f"{symbol}: {exc}")
                 snapshot_rows.append(
                     {
@@ -219,6 +244,17 @@ def run_scan(
                 passed_count += 1
             else:
                 failed_details.append(reason)
+            logger.debug(
+                "Filter result run_id=%s symbol=%s passed=%s reason=%s last_price=%s pct_change_1d=%s pct_change_intraday=%s market_cap=%s",
+                scan_run_id,
+                symbol,
+                passed,
+                reason,
+                snapshot.get("last_price"),
+                snapshot.get("pct_change_1d"),
+                snapshot.get("pct_change_intraday"),
+                snapshot.get("market_cap"),
+            )
 
             snapshot_rows.append(
                 {
@@ -252,6 +288,8 @@ def run_scan(
         if failed_details:
             notes += " Some symbols failed filters or data fetch."
         update_scan_run_status(conn, scan_run_id, "completed", notes)
+        logger.info("Completed scan run_id=%s processed=%s passed=%s", scan_run_id, len(symbols), passed_count)
+        logger.debug("Scan run_id=%s completion_notes=%s", scan_run_id, notes)
         return scan_run_id
     except Exception as exc:  # noqa: BLE001
         if isinstance(exc, OSError):
@@ -262,6 +300,7 @@ def run_scan(
         else:
             message = f"Scan failed due to an upstream data or pipeline error: {exc}"
         update_scan_run_status(conn, scan_run_id, "failed", message)
+        logger.exception("Scan failed run_id=%s message=%s", scan_run_id, message)
         raise PipelineError(message) from exc
     finally:
         try:

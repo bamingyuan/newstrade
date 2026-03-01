@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
+import logging
 from typing import Any
 
 from .market_data import pct_change
@@ -21,6 +22,9 @@ class IbkrConnectionConfig:
     client_id: int
 
 
+logger = logging.getLogger(__name__)
+
+
 class IbkrClient:
     def __init__(self, host: str, port: int, client_id: int) -> None:
         self._cfg = IbkrConnectionConfig(host=host, port=port, client_id=client_id)
@@ -32,11 +36,21 @@ class IbkrClient:
         if self.ib is None:
             self.ib = IB()
         if not self.ib.isConnected():
+            logger.debug(
+                "IBKR connect request host=%s port=%s clientId=%s timeout=%s",
+                self._cfg.host,
+                self._cfg.port,
+                self._cfg.client_id,
+                8,
+            )
             self.ib.connect(self._cfg.host, self._cfg.port, clientId=self._cfg.client_id, timeout=8)
+            logger.debug("IBKR connect response connected=%s", self.ib.isConnected())
 
     def disconnect(self) -> None:
         if self.ib is not None and self.ib.isConnected():
+            logger.debug("IBKR disconnect request")
             self.ib.disconnect()
+            logger.debug("IBKR disconnect response connected=%s", self.ib.isConnected())
 
     def __enter__(self) -> "IbkrClient":
         self.connect()
@@ -57,15 +71,34 @@ class IbkrClient:
                 scanCode=scan_code,
             )
             try:
+                logger.debug(
+                    "IBKR reqScannerData request instrument=%s locationCode=%s scanCode=%s max_symbols=%s",
+                    sub.instrument,
+                    sub.locationCode,
+                    sub.scanCode,
+                    max_symbols,
+                )
                 data = self.ib.reqScannerData(sub)
+                logger.debug(
+                    "IBKR reqScannerData response scanCode=%s rows=%s",
+                    scan_code,
+                    len(data),
+                )
             except Exception:
+                logger.exception("IBKR reqScannerData failed for scanCode=%s", scan_code)
                 continue
             for row in data[:max_symbols]:
                 contract = row.contractDetails.contract
                 if contract.symbol:
                     symbols.add(contract.symbol.upper())
 
-        return sorted(symbols)
+        discovered = sorted(symbols)
+        logger.debug(
+            "IBKR discover_symbols result count=%s symbols=%s",
+            len(discovered),
+            discovered,
+        )
+        return discovered
 
     def fetch_price_snapshot(
         self,
@@ -76,9 +109,31 @@ class IbkrClient:
     ) -> dict[str, Any]:
         self.connect()
         contract = Stock(symbol, "SMART", "USD")
+        logger.debug(
+            "IBKR qualifyContracts request symbol=%s exchange=%s currency=%s",
+            symbol,
+            "SMART",
+            "USD",
+        )
         self.ib.qualifyContracts(contract)
+        logger.debug(
+            "IBKR qualifyContracts response symbol=%s conId=%s primaryExchange=%s",
+            symbol,
+            getattr(contract, "conId", None),
+            getattr(contract, "primaryExchange", None),
+        )
         end_date_time = _format_ib_end_datetime(end_datetime)
 
+        logger.debug(
+            "IBKR reqHistoricalData request symbol=%s endDateTime=%r durationStr=%s barSizeSetting=%s whatToShow=%s useRTH=%s formatDate=%s",
+            symbol,
+            end_date_time,
+            "10 D",
+            "1 day",
+            "TRADES",
+            True,
+            1,
+        )
         daily_bars = self.ib.reqHistoricalData(
             contract,
             endDateTime=end_date_time,
@@ -88,7 +143,24 @@ class IbkrClient:
             useRTH=True,
             formatDate=1,
         )
+        logger.debug(
+            "IBKR reqHistoricalData response symbol=%s durationStr=%s barSizeSetting=%s bars=%s",
+            symbol,
+            "10 D",
+            "1 day",
+            len(daily_bars),
+        )
 
+        logger.debug(
+            "IBKR reqHistoricalData request symbol=%s endDateTime=%r durationStr=%s barSizeSetting=%s whatToShow=%s useRTH=%s formatDate=%s",
+            symbol,
+            end_date_time,
+            f"{intraday_lookback_days} D",
+            intraday_bar_size,
+            "TRADES",
+            True,
+            1,
+        )
         intraday_bars = self.ib.reqHistoricalData(
             contract,
             endDateTime=end_date_time,
@@ -97,6 +169,13 @@ class IbkrClient:
             whatToShow="TRADES",
             useRTH=True,
             formatDate=1,
+        )
+        logger.debug(
+            "IBKR reqHistoricalData response symbol=%s durationStr=%s barSizeSetting=%s bars=%s",
+            symbol,
+            f"{intraday_lookback_days} D",
+            intraday_bar_size,
+            len(intraday_bars),
         )
 
         last_price = None
@@ -122,7 +201,7 @@ class IbkrClient:
         if last_price is None:
             raise RuntimeError(f"No price bars returned for {symbol}")
 
-        return {
+        snapshot = {
             "symbol": symbol,
             "last_price": float(last_price),
             "pct_change_1d": pct_change_1d,
@@ -135,6 +214,15 @@ class IbkrClient:
                 else datetime.now(timezone.utc).isoformat()
             ),
         }
+        logger.debug(
+            "IBKR snapshot result symbol=%s last_price=%s pct_change_1d=%s pct_change_intraday=%s latest_daily_bar_date=%s",
+            symbol,
+            snapshot["last_price"],
+            snapshot["pct_change_1d"],
+            snapshot["pct_change_intraday"],
+            snapshot["latest_daily_bar_date"],
+        )
+        return snapshot
 
 
 def create_ibkr_client(host: str, port: int, client_id: int) -> IbkrClient:
