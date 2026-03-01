@@ -64,6 +64,9 @@ def init_db(conn: sqlite3.Connection) -> None:
             published_ts_utc TEXT,
             rss_fetched_ts_utc TEXT NOT NULL,
             dedup_key TEXT NOT NULL,
+            summary TEXT,
+            provider TEXT NOT NULL DEFAULT 'yahoo_rss',
+            provider_article_id TEXT,
             FOREIGN KEY(scan_run_id) REFERENCES scan_runs(scan_run_id),
             UNIQUE(scan_run_id, symbol, dedup_key)
         );
@@ -123,6 +126,9 @@ def init_db(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "article_scores", "reasoning_tokens", "INTEGER")
     _ensure_column(conn, "article_scores", "impact_direction", "TEXT NOT NULL DEFAULT 'neutral'")
     _ensure_column(conn, "symbols_snapshot", "price_as_of_ts_utc", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "news_articles", "summary", "TEXT")
+    _ensure_column(conn, "news_articles", "provider", "TEXT NOT NULL DEFAULT 'yahoo_rss'")
+    _ensure_column(conn, "news_articles", "provider_article_id", "TEXT")
 
     conn.commit()
 
@@ -207,8 +213,9 @@ def insert_news_articles(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]
             conn.execute(
                 """
                 INSERT INTO news_articles (
-                    scan_run_id, symbol, url, title, source, published_ts_utc, rss_fetched_ts_utc, dedup_key
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    scan_run_id, symbol, url, title, source, published_ts_utc, rss_fetched_ts_utc, dedup_key,
+                    summary, provider, provider_article_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     row["scan_run_id"],
@@ -219,6 +226,9 @@ def insert_news_articles(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]
                     row.get("published_ts_utc"),
                     row["rss_fetched_ts_utc"],
                     row["dedup_key"],
+                    row.get("summary"),
+                    row.get("provider", "yahoo_rss"),
+                    row.get("provider_article_id"),
                 ),
             )
             inserted += 1

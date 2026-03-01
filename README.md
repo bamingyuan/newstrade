@@ -9,7 +9,7 @@ Newstrade is a beginner-friendly Python app that answers:
 It uses:
 
 - IBKR for price movement scanning
-- Yahoo Finance RSS for symbol news
+- Yahoo Finance RSS + Massive (Polygon) for symbol news
 - OpenAI for structured sentiment/severity scoring
 - SQLite for storage
 - Streamlit for a mobile-friendly dashboard
@@ -79,7 +79,12 @@ The dashboard is read-only and shows:
 - For reasoning-heavy models (for example `gpt-5-mini`), `OPENAI_MAX_COMPLETION_TOKENS` also covers reasoning tokens. If set too low, the model may return empty content.
 - Set `SCAN_TIME_TRAVEL=1` and `SCAN_AS_OF_DATE=YYYY-MM-DD` to test scans/news against a past date (interpreted as US close, 16:00 `America/New_York`).
 - When time travel is enabled, scan mode must be `env` (`newstrade scan --mode env ...`), otherwise the scan fails with a clear message.
+- `newstrade news` merges Yahoo RSS and Massive results when `MASSIVE_API_KEY` is set, and deduplicates by canonical article URL.
+- Massive is optional; if `MASSIVE_API_KEY` is empty, the pipeline uses Yahoo only.
+- For Massive free-tier usage, keep `MASSIVE_MAX_CALLS_PER_MINUTE=5`.
+- For 2-week historical backfill, set `NEWS_LOOKBACK_HOURS=336`.
 - `symbols_snapshot.price_source_ts_utc` records when price data was fetched; `symbols_snapshot.price_as_of_ts_utc` records the market as-of timestamp used for that snapshot.
+- `news_articles.summary` stores provider summaries when available (for example Massive `description`), and is included in AI scoring context.
 - On weekends/holidays, scan continues and may use the previous trading session for some symbols. A warning is added to the run notes.
 - Set `MARKET_CAP=0` in `.env` to skip market-cap API calls entirely. In that mode, market-cap filters are disabled and `symbols_snapshot.market_cap` stays empty.
 - If market-cap filters are active and cap data is unavailable for a symbol, that symbol is filtered out.

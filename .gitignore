@@ -8,3 +8,5 @@ __pycache__/
 .pytest_cache/
 **/*.db
 *.egg-info/
+!tests/
+!tests/*.py

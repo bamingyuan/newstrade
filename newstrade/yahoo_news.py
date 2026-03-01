@@ -109,6 +109,9 @@ def fetch_symbol_news(
                 "published_ts_utc": published_dt.isoformat() if published_dt else "",
                 "rss_fetched_ts_utc": now.isoformat(),
                 "dedup_key": dedup_key,
+                "summary": "",
+                "provider": "yahoo_rss",
+                "provider_article_id": "",
             }
         )
 

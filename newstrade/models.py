@@ -26,6 +26,9 @@ class NewsArticle:
     published_ts_utc: str
     rss_fetched_ts_utc: str
     dedup_key: str
+    summary: str | None = None
+    provider: str = "yahoo_rss"
+    provider_article_id: str | None = None
 
 
 @dataclass

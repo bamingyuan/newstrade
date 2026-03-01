@@ -136,6 +136,7 @@ class AIScorer:
             "Score this stock news item.\n"
             f"Symbol: {article['symbol']}\n"
             f"Title: {article['title']}\n"
+            f"Feed Summary: {article.get('summary') or ''}\n"
             f"Source: {article['source']}\n"
             f"Published UTC: {article.get('published_ts_utc', '')}\n"
             f"URL: {article['url']}\n\n"

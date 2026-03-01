@@ -25,6 +25,7 @@ from .db import (
     get_scored_articles_for_symbol,
 )
 from .ibkr_client import create_ibkr_client
+from .massive_news import MassiveRateLimiter, fetch_symbol_news_massive
 from .market_data import passes_symbol_filters
 from .reporting import build_report_dataframe, report_to_console
 from .time_utils import parse_iso_utc, utc_now_iso
@@ -76,6 +77,29 @@ def _resolve_price_as_of_ts_utc(snapshot: dict[str, Any], end_datetime: datetime
     if end_datetime is not None:
         return end_datetime.astimezone(timezone.utc).isoformat()
     return utc_now_iso()
+
+
+def _safe_signature_params(func: Callable[..., Any]) -> tuple[set[str], bool]:
+    try:
+        signature = inspect.signature(func)
+    except (TypeError, ValueError):
+        return set(), True
+    params = set(signature.parameters)
+    accepts_kwargs = any(
+        parameter.kind == inspect.Parameter.VAR_KEYWORD
+        for parameter in signature.parameters.values()
+    )
+    return params, accepts_kwargs
+
+
+def _call_provider(
+    fetcher: Callable[..., list[dict[str, str]]],
+    kwargs: dict[str, Any],
+) -> list[dict[str, str]]:
+    params, accepts_kwargs = _safe_signature_params(fetcher)
+    if accepts_kwargs or not params:
+        return fetcher(**kwargs)
+    return fetcher(**{key: value for key, value in kwargs.items() if key in params})
 
 
 def _collect_symbols(config: AppConfig, symbol_mode: str, ibkr_client: Any) -> list[str]:
@@ -251,6 +275,7 @@ def run_news(
     config: AppConfig,
     scan_run_id: int,
     news_fetcher: Callable[..., list[dict[str, str]]] = fetch_symbol_news,
+    massive_news_fetcher: Callable[..., list[dict[str, str]]] = fetch_symbol_news_massive,
 ) -> int:
     conn = connect_db(config.db_path)
     init_db(conn)
@@ -263,30 +288,47 @@ def run_news(
     article_rows: list[dict[str, Any]] = []
     as_of_datetime = _resolve_time_travel_end_datetime(config)
     as_of_datetime_utc = as_of_datetime.astimezone(timezone.utc) if as_of_datetime is not None else None
-    try:
-        news_fetcher_params = set(inspect.signature(news_fetcher).parameters)
-    except (TypeError, ValueError):
-        news_fetcher_params = set()
+    massive_enabled = bool(config.massive_api_key.strip())
+    massive_limiter = (
+        MassiveRateLimiter(max_calls_per_minute=config.massive_max_calls_per_minute) if massive_enabled else None
+    )
 
     for symbol_row in symbols:
         symbol = str(symbol_row["symbol"])
         existing_keys = list_existing_article_dedup_keys(conn, scan_run_id, symbol)
 
+        fetched_items: list[dict[str, str]] = []
+
         try:
-            fetch_kwargs: dict[str, Any] = {
+            yahoo_kwargs: dict[str, Any] = {
                 "symbol": symbol,
                 "lookback_hours": config.news_lookback_hours,
                 "max_articles": config.max_news_articles_per_symbol,
                 "region": config.yahoo_rss_region,
                 "lang": config.yahoo_rss_lang,
+                "as_of_datetime": as_of_datetime,
             }
-            if "as_of_datetime" in news_fetcher_params:
-                fetch_kwargs["as_of_datetime"] = as_of_datetime
-            fetched = news_fetcher(**fetch_kwargs)
+            fetched_items.extend(_call_provider(news_fetcher, yahoo_kwargs))
         except Exception:  # noqa: BLE001
-            continue
+            pass
 
-        for item in fetched:
+        if massive_enabled:
+            try:
+                massive_kwargs: dict[str, Any] = {
+                    "symbol": symbol,
+                    "lookback_hours": config.news_lookback_hours,
+                    "max_articles": config.max_news_articles_per_symbol,
+                    "api_key": config.massive_api_key,
+                    "as_of_datetime": as_of_datetime,
+                    "max_pages_per_symbol": config.massive_news_max_pages_per_symbol,
+                    "max_calls_per_minute": config.massive_max_calls_per_minute,
+                    "rate_limiter": massive_limiter,
+                }
+                fetched_items.extend(_call_provider(massive_news_fetcher, massive_kwargs))
+            except Exception:  # noqa: BLE001
+                pass
+
+        for item in fetched_items:
             published_ts_utc = str(item.get("published_ts_utc") or "").strip()
             if as_of_datetime_utc is not None and published_ts_utc:
                 published_dt = parse_iso_utc(published_ts_utc)
@@ -307,6 +349,9 @@ def run_news(
                     "published_ts_utc": published_ts_utc,
                     "rss_fetched_ts_utc": item["rss_fetched_ts_utc"],
                     "dedup_key": dedup_key,
+                    "summary": str(item.get("summary", "")).strip() or None,
+                    "provider": str(item.get("provider", "yahoo_rss")).strip() or "yahoo_rss",
+                    "provider_article_id": str(item.get("provider_article_id", "")).strip() or None,
                 }
             )
 
@@ -346,6 +391,7 @@ def run_score(
             "source": article["source"],
             "published_ts_utc": article["published_ts_utc"],
             "url": article["url"],
+            "summary": article["summary"],
         }
 
         try:

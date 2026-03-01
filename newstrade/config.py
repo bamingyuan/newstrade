@@ -40,6 +40,9 @@ class AppConfig:
     max_news_articles_per_symbol: int = 8
     yahoo_rss_region: str = "US"
     yahoo_rss_lang: str = "en-US"
+    massive_api_key: str = ""
+    massive_max_calls_per_minute: int = 5
+    massive_news_max_pages_per_symbol: int = 3
 
     openai_api_key: str = ""
     openai_model: str = "gpt-4.1-mini"
@@ -89,6 +92,10 @@ class AppConfig:
             raise ConfigError("NEWS_LOOKBACK_HOURS must be > 0")
         if self.max_news_articles_per_symbol <= 0:
             raise ConfigError("MAX_NEWS_ARTICLES_PER_SYMBOL must be > 0")
+        if self.massive_max_calls_per_minute <= 0:
+            raise ConfigError("MASSIVE_MAX_CALLS_PER_MINUTE must be > 0")
+        if self.massive_news_max_pages_per_symbol <= 0:
+            raise ConfigError("MASSIVE_NEWS_MAX_PAGES_PER_SYMBOL must be > 0")
         if self.intraday_lookback_days <= 0:
             raise ConfigError("INTRADAY_LOOKBACK_DAYS must be > 0")
         if self.openai_timeout_seconds <= 0:
@@ -182,6 +189,9 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         max_news_articles_per_symbol=int(mapping.get("MAX_NEWS_ARTICLES_PER_SYMBOL", 8)),
         yahoo_rss_region=mapping.get("YAHOO_RSS_REGION", "US").strip(),
         yahoo_rss_lang=mapping.get("YAHOO_RSS_LANG", "en-US").strip(),
+        massive_api_key=mapping.get("MASSIVE_API_KEY", "").strip(),
+        massive_max_calls_per_minute=int(mapping.get("MASSIVE_MAX_CALLS_PER_MINUTE", 5)),
+        massive_news_max_pages_per_symbol=int(mapping.get("MASSIVE_NEWS_MAX_PAGES_PER_SYMBOL", 3)),
         openai_api_key=mapping.get("OPENAI_API_KEY", "").strip(),
         openai_model=mapping.get("OPENAI_MODEL", "gpt-4.1-mini").strip(),
         openai_timeout_seconds=int(mapping.get("OPENAI_TIMEOUT_SECONDS", 30)),
