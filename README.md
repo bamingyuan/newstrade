@@ -34,11 +34,13 @@ Run one stage at a time:
 
 ```bash
 newstrade scan --window 1d --mode both
-newstrade news --scan-run-id 1
-newstrade score --scan-run-id 1
-newstrade report --scan-run-id 1 --top 30
-newstrade export --scan-run-id 1 --format csv
+newstrade news
+newstrade score
+newstrade report --top 30
+newstrade export --format csv
 ```
+
+`news`, `score`, `report`, and `export` automatically use the latest `scan_run_id` when `--scan-run-id` is omitted.
 
 Or run the whole pipeline:
 
