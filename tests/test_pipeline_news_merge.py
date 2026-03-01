@@ -137,3 +137,55 @@ def test_run_news_merges_yahoo_and_massive_and_filters_future(tmp_path) -> None:
         ("https://example.com/massive-only", "massive", "Massive summary", "m-1"),
         ("https://example.com/shared?utm=1", "yahoo_rss", None, None),
     ]
+
+
+def test_run_news_skips_massive_when_disabled(tmp_path) -> None:
+    db_path = str(tmp_path / "news_massive_off.db")
+    run_id = _create_run_with_symbol(db_path)
+    config = AppConfig(
+        symbol_mode="env",
+        symbols=["AAPL"],
+        scan_time_travel_enabled=True,
+        scan_as_of_date=date.fromisoformat("2026-02-23"),
+        market_cap_enabled=False,
+        db_path=db_path,
+        massive_news_enabled=False,
+        massive_api_key="test-key",
+        news_lookback_hours=24,
+        max_news_articles_per_symbol=10,
+    )
+
+    def yahoo_fetcher(**kwargs):
+        return [
+            {
+                "symbol": "AAPL",
+                "url": "https://example.com/yahoo-only",
+                "title": "Yahoo Only",
+                "source": "Yahoo Finance RSS",
+                "published_ts_utc": "2026-02-23T19:00:00+00:00",
+                "rss_fetched_ts_utc": utc_now_iso(),
+                "dedup_key": "https://example.com/yahoo-only",
+                "summary": "",
+                "provider": "yahoo_rss",
+                "provider_article_id": "",
+            }
+        ]
+
+    def massive_fetcher(**kwargs):
+        raise AssertionError("Massive fetcher should not be called when MASSIVE_NEWS=0")
+
+    inserted = run_news(
+        config=config,
+        scan_run_id=run_id,
+        news_fetcher=yahoo_fetcher,
+        massive_news_fetcher=massive_fetcher,
+    )
+    assert inserted == 1
+
+    conn = sqlite3.connect(db_path)
+    rows = conn.execute(
+        "SELECT url, provider FROM news_articles WHERE scan_run_id = ? ORDER BY article_id",
+        (run_id,),
+    ).fetchall()
+    conn.close()
+    assert rows == [("https://example.com/yahoo-only", "yahoo_rss")]

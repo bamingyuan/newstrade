@@ -40,6 +40,7 @@ class AppConfig:
     max_news_articles_per_symbol: int = 8
     yahoo_rss_region: str = "US"
     yahoo_rss_lang: str = "en-US"
+    massive_news_enabled: bool = True
     massive_api_key: str = ""
     massive_max_calls_per_minute: int = 5
     massive_news_max_pages_per_symbol: int = 3
@@ -189,6 +190,7 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         max_news_articles_per_symbol=int(mapping.get("MAX_NEWS_ARTICLES_PER_SYMBOL", 8)),
         yahoo_rss_region=mapping.get("YAHOO_RSS_REGION", "US").strip(),
         yahoo_rss_lang=mapping.get("YAHOO_RSS_LANG", "en-US").strip(),
+        massive_news_enabled=_parse_binary_flag(mapping.get("MASSIVE_NEWS"), True, "MASSIVE_NEWS"),
         massive_api_key=mapping.get("MASSIVE_API_KEY", "").strip(),
         massive_max_calls_per_minute=int(mapping.get("MASSIVE_MAX_CALLS_PER_MINUTE", 5)),
         massive_news_max_pages_per_symbol=int(mapping.get("MASSIVE_NEWS_MAX_PAGES_PER_SYMBOL", 3)),

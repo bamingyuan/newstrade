@@ -288,7 +288,7 @@ def run_news(
     article_rows: list[dict[str, Any]] = []
     as_of_datetime = _resolve_time_travel_end_datetime(config)
     as_of_datetime_utc = as_of_datetime.astimezone(timezone.utc) if as_of_datetime is not None else None
-    massive_enabled = bool(config.massive_api_key.strip())
+    massive_enabled = config.massive_news_enabled and bool(config.massive_api_key.strip())
     massive_limiter = (
         MassiveRateLimiter(max_calls_per_minute=config.massive_max_calls_per_minute) if massive_enabled else None
     )
