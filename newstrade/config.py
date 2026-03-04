@@ -58,6 +58,7 @@ class AppConfig:
     ibkr_port: int = 4002
     ibkr_client_id: int = 37
     ibkr_account_mode: str = "paper"
+    ibkr_max_symbols: int = 100
 
     timezone: str = "UTC"
     db_path: str = "./data/newstrade.db"
@@ -109,6 +110,8 @@ class AppConfig:
             raise ConfigError("OPENAI_MAX_COMPLETION_TOKENS must be > 0 when set")
         if self.openai_score_retries < 0:
             raise ConfigError("OPENAI_SCORE_RETRIES must be >= 0")
+        if self.ibkr_max_symbols <= 0:
+            raise ConfigError("IBKR_MAX_SYMBOLS must be > 0")
 
     @property
     def db_path_obj(self) -> Path:
@@ -210,6 +213,7 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         ibkr_port=int(mapping.get("IBKR_PORT", 4002)),
         ibkr_client_id=int(mapping.get("IBKR_CLIENT_ID", 37)),
         ibkr_account_mode=mapping.get("IBKR_ACCOUNT_MODE", "paper").strip().lower(),
+        ibkr_max_symbols=int(mapping.get("IBKR_MAX_SYMBOLS", 100)),
         timezone=mapping.get("TIMEZONE", "UTC").strip(),
         db_path=mapping.get("DB_PATH", "./data/newstrade.db").strip(),
         log_level=mapping.get("LOG_LEVEL", "INFO").strip().upper(),

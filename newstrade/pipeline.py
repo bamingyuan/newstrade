@@ -25,12 +25,12 @@ from .db import (
     upsert_symbol_score,
     get_scored_articles_for_symbol,
 )
-from .ibkr_client import create_ibkr_client
+from .ibkr_client import IbkrScannerFilters, create_ibkr_client
 from .massive_news import MassiveRateLimiter, fetch_symbol_news_massive
 from .market_data import passes_symbol_filters
 from .reporting import build_report_dataframe, report_to_console
 from .time_utils import parse_iso_utc, utc_now_iso
-from .yahoo_news import fetch_market_caps, fetch_symbol_news
+from .yahoo_news import fetch_symbol_news
 
 
 logger = logging.getLogger(__name__)
@@ -106,14 +106,34 @@ def _call_provider(
     return fetcher(**{key: value for key, value in kwargs.items() if key in params})
 
 
-def _collect_symbols(config: AppConfig, symbol_mode: str, ibkr_client: Any) -> list[str]:
+def _build_scanner_filters(config: AppConfig) -> IbkrScannerFilters:
+    min_market_cap = config.min_market_cap if config.market_cap_enabled else None
+    max_market_cap = config.max_market_cap if config.market_cap_enabled else None
+    return IbkrScannerFilters(
+        min_price=config.min_price,
+        max_price=config.max_price,
+        min_volume=config.min_volume,
+        min_market_cap=min_market_cap,
+        max_market_cap=max_market_cap,
+    )
+
+
+def _collect_symbols(
+    config: AppConfig,
+    symbol_mode: str,
+    ibkr_client: Any,
+    scanner_filters: IbkrScannerFilters | None = None,
+) -> list[str]:
     symbols: set[str] = set()
 
     if symbol_mode in {"env", "both"}:
         symbols.update(symbol.upper() for symbol in config.symbols)
 
     if symbol_mode in {"ibkr", "both"}:
-        discovered = ibkr_client.discover_symbols()
+        discovered = ibkr_client.discover_symbols(
+            max_symbols=config.ibkr_max_symbols,
+            filters=scanner_filters,
+        )
         symbols.update(symbol.upper() for symbol in discovered)
 
     return sorted(symbol for symbol in symbols if symbol)
@@ -124,7 +144,6 @@ def run_scan(
     window: str | None = None,
     mode: str | None = None,
     ibkr_factory: Callable[[str, int, int], Any] = create_ibkr_client,
-    market_cap_fetcher: Callable[[list[str]], dict[str, float | None]] = fetch_market_caps,
 ) -> int:
     scan_window = _resolve_scan_window(config, window)
     symbol_mode = _resolve_symbol_mode(config, mode)
@@ -152,11 +171,12 @@ def run_scan(
         symbol_mode,
     )
     logger.debug(
-        "Scan run_id=%s config ibkr_host=%s ibkr_port=%s ibkr_client_id=%s intraday_lookback_days=%s intraday_bar_size=%s end_datetime=%s",
+        "Scan run_id=%s config ibkr_host=%s ibkr_port=%s ibkr_client_id=%s ibkr_max_symbols=%s intraday_lookback_days=%s intraday_bar_size=%s end_datetime=%s",
         scan_run_id,
         config.ibkr_host,
         config.ibkr_port,
         config.ibkr_client_id,
+        config.ibkr_max_symbols,
         config.intraday_lookback_days,
         config.intraday_bar_size,
         end_datetime.isoformat() if end_datetime is not None else None,
@@ -167,7 +187,8 @@ def run_scan(
             raise ValueError("SCAN_TIME_TRAVEL=1 requires symbol mode 'env'. Use --mode env or SYMBOL_MODE=env.")
 
         ibkr_client.connect()
-        symbols = _collect_symbols(config, symbol_mode, ibkr_client)
+        scanner_filters = _build_scanner_filters(config)
+        symbols = _collect_symbols(config, symbol_mode, ibkr_client, scanner_filters=scanner_filters)
         logger.info("Resolved %s symbols for scan run_id=%s", len(symbols), scan_run_id)
         logger.debug("Scan run_id=%s symbols=%s", scan_run_id, symbols)
 
@@ -176,23 +197,7 @@ def run_scan(
             logger.info("Scan run_id=%s completed with no symbols", scan_run_id)
             return scan_run_id
 
-        market_cap_unavailable_globally = False
-        market_cap_disabled_by_config = not config.market_cap_enabled
-        if config.market_cap_enabled:
-            try:
-                market_caps = market_cap_fetcher(symbols)
-            except Exception:  # noqa: BLE001
-                market_caps = {symbol: None for symbol in symbols}
-        else:
-            market_caps = {symbol: None for symbol in symbols}
-
-        if market_cap_disabled_by_config:
-            filter_config = replace(config, min_market_cap=None, max_market_cap=None)
-        elif config.market_cap_filter_active and market_caps and all(value is None for value in market_caps.values()):
-            market_cap_unavailable_globally = True
-            filter_config = replace(config, min_market_cap=None, max_market_cap=None)
-        else:
-            filter_config = config
+        filter_config = replace(config, min_market_cap=None, max_market_cap=None)
 
         snapshot_rows: list[dict[str, Any]] = []
         passed_count = 0
@@ -219,7 +224,7 @@ def run_scan(
                         "pct_change_1d": None,
                         "pct_change_intraday": None,
                         "volume": None,
-                        "market_cap": market_caps.get(symbol),
+                        "market_cap": None,
                         "price_source_ts_utc": utc_now_iso(),
                         "price_as_of_ts_utc": (
                             end_datetime.astimezone(timezone.utc).isoformat()
@@ -239,7 +244,7 @@ def run_scan(
                         f"{symbol}: requested {requested_date}, latest available {latest_daily_bar_date}"
                     )
 
-            snapshot["market_cap"] = market_caps.get(symbol)
+            snapshot["market_cap"] = None
             passed, reason = passes_symbol_filters(snapshot, filter_config, scan_window)
             if passed:
                 passed_count += 1
@@ -284,10 +289,10 @@ def run_scan(
             if remaining > 0:
                 sample += f"; +{remaining} more"
             notes += f" Some symbols returned prior sessions: {sample}."
-        if market_cap_disabled_by_config:
-            notes += " Market-cap fetching disabled via MARKET_CAP=0."
-        if market_cap_unavailable_globally:
-            notes += " Market-cap filtering temporarily disabled because Yahoo market-cap data was unavailable."
+        if not config.market_cap_enabled:
+            notes += " Market-cap scanner bounds disabled via MARKET_CAP=0."
+        if config.market_cap_enabled and symbol_mode in {"env", "both"}:
+            notes += " Market-cap bounds are scanner-only and are not applied to env symbols."
         if failed_details:
             notes += " Some symbols failed filters or data fetch."
         update_scan_run_status(conn, scan_run_id, "completed", notes)

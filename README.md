@@ -89,9 +89,14 @@ The dashboard is read-only and shows:
 - `symbols_snapshot.price_source_ts_utc` records when price data was fetched; `symbols_snapshot.price_as_of_ts_utc` records the market as-of timestamp used for that snapshot.
 - `news_articles.summary` stores provider summaries when available (for example Massive `description`), and is included in AI scoring context.
 - On weekends/holidays, scan continues and may use the previous trading session for some symbols. A warning is added to the run notes.
-- Set `MIN_VOLUME` / `MAX_VOLUME` in `.env` to filter by trading volume (latest IBKR daily `TRADES` bar volume). Leave either empty to disable that bound.
-- Set `MARKET_CAP=0` in `.env` to skip market-cap API calls entirely. In that mode, market-cap filters are disabled and `symbols_snapshot.market_cap` stays empty.
-- If market-cap filters are active and cap data is unavailable for a symbol, that symbol is filtered out.
+- `MIN_PRICE` / `MAX_PRICE` are sent to the IBKR scanner and still validated locally after snapshot fetch.
+- `MIN_VOLUME` is sent to the scanner as `aboveVolume` and still validated locally from latest IBKR daily `TRADES` volume.
+- `MAX_VOLUME` is local-only (IBKR scanner has no max-volume bound).
+- `MIN_MARKET_CAP` / `MAX_MARKET_CAP` are scanner-only bounds when `MARKET_CAP=1`.
+- Set `IBKR_MAX_SYMBOLS` to control how many scanner rows are requested per scan code (`TOP_PERC_GAIN` and `TOP_PERC_LOSE`) before de-duplication.
+- Set `MARKET_CAP=0` in `.env` to disable market-cap scanner bounds.
+- Market-cap bounds are not applied to pure env symbols (`--mode env` or `SYMBOL_MODE=env`; and env-added symbols in `both`).
+- `symbols_snapshot.market_cap` stays empty in scan-stage snapshots.
 - Set `LOG_LEVEL=DEBUG` to print transparent IBKR scan logs (connect params, scanner request args, historical-data request args, bar counts, and per-symbol filter outcomes).
 
 ## 6) Tests

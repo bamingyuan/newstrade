@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 import logging
+import math
 from typing import Any
 
 from .market_data import pct_change
@@ -20,6 +21,15 @@ class IbkrConnectionConfig:
     host: str
     port: int
     client_id: int
+
+
+@dataclass
+class IbkrScannerFilters:
+    min_price: float | None = None
+    max_price: float | None = None
+    min_volume: float | None = None
+    min_market_cap: float | None = None
+    max_market_cap: float | None = None
 
 
 logger = logging.getLogger(__name__)
@@ -59,24 +69,27 @@ class IbkrClient:
     def __exit__(self, exc_type, exc, tb) -> None:
         self.disconnect()
 
-    def discover_symbols(self, max_symbols: int = 100) -> list[str]:
+    def discover_symbols(self, max_symbols: int = 100, filters: IbkrScannerFilters | None = None) -> list[str]:
         self.connect()
         symbols: set[str] = set()
+        scanner_filters = filters or IbkrScannerFilters()
 
         scan_codes = ["TOP_PERC_GAIN", "TOP_PERC_LOSE"]
         for scan_code in scan_codes:
-            sub = ScannerSubscription(
-                instrument="STK",
-                locationCode="STK.US.MAJOR",
-                scanCode=scan_code,
-            )
+            sub = _build_scanner_subscription(scan_code=scan_code, max_symbols=max_symbols, filters=scanner_filters)
             try:
                 logger.debug(
-                    "IBKR reqScannerData request instrument=%s locationCode=%s scanCode=%s max_symbols=%s",
+                    "IBKR reqScannerData request instrument=%s locationCode=%s scanCode=%s max_symbols=%s numberOfRows=%s abovePrice=%s belowPrice=%s aboveVolume=%s marketCapAbove=%s marketCapBelow=%s",
                     sub.instrument,
                     sub.locationCode,
                     sub.scanCode,
                     max_symbols,
+                    sub.numberOfRows,
+                    sub.abovePrice,
+                    sub.belowPrice,
+                    sub.aboveVolume,
+                    sub.marketCapAbove,
+                    sub.marketCapBelow,
                 )
                 data = self.ib.reqScannerData(sub)
                 logger.debug(
@@ -85,8 +98,39 @@ class IbkrClient:
                     len(data),
                 )
             except Exception:
-                logger.exception("IBKR reqScannerData failed for scanCode=%s", scan_code)
-                continue
+                if _has_scanner_filters(scanner_filters):
+                    logger.warning(
+                        "IBKR reqScannerData failed for scanCode=%s with optional scanner filters; retrying without optional filters",
+                        scan_code,
+                        exc_info=True,
+                    )
+                    sub = _build_scanner_subscription(
+                        scan_code=scan_code,
+                        max_symbols=max_symbols,
+                        filters=scanner_filters,
+                        include_optional_filters=False,
+                    )
+                    try:
+                        logger.debug(
+                            "IBKR reqScannerData retry request instrument=%s locationCode=%s scanCode=%s max_symbols=%s numberOfRows=%s",
+                            sub.instrument,
+                            sub.locationCode,
+                            sub.scanCode,
+                            max_symbols,
+                            sub.numberOfRows,
+                        )
+                        data = self.ib.reqScannerData(sub)
+                        logger.debug(
+                            "IBKR reqScannerData retry response scanCode=%s rows=%s",
+                            scan_code,
+                            len(data),
+                        )
+                    except Exception:
+                        logger.exception("IBKR reqScannerData retry failed for scanCode=%s", scan_code)
+                        continue
+                else:
+                    logger.exception("IBKR reqScannerData failed for scanCode=%s", scan_code)
+                    continue
             for row in data[:max_symbols]:
                 contract = row.contractDetails.contract
                 if contract.symbol:
@@ -231,6 +275,49 @@ class IbkrClient:
 
 def create_ibkr_client(host: str, port: int, client_id: int) -> IbkrClient:
     return IbkrClient(host=host, port=port, client_id=client_id)
+
+
+def _build_scanner_subscription(
+    scan_code: str,
+    max_symbols: int,
+    filters: IbkrScannerFilters,
+    include_optional_filters: bool = True,
+) -> Any:
+    kwargs: dict[str, Any] = {
+        "instrument": "STK",
+        "locationCode": "STK.US.MAJOR",
+        "scanCode": scan_code,
+        "numberOfRows": max_symbols,
+    }
+    if include_optional_filters:
+        if filters.min_price is not None:
+            kwargs["abovePrice"] = filters.min_price
+        if filters.max_price is not None:
+            kwargs["belowPrice"] = filters.max_price
+        if filters.min_volume is not None:
+            kwargs["aboveVolume"] = _scanner_min_volume(filters.min_volume)
+        if filters.min_market_cap is not None:
+            kwargs["marketCapAbove"] = filters.min_market_cap
+        if filters.max_market_cap is not None:
+            kwargs["marketCapBelow"] = filters.max_market_cap
+    return ScannerSubscription(**kwargs)
+
+
+def _scanner_min_volume(raw: float) -> int:
+    return int(math.ceil(raw))
+
+
+def _has_scanner_filters(filters: IbkrScannerFilters) -> bool:
+    return any(
+        value is not None
+        for value in (
+            filters.min_price,
+            filters.max_price,
+            filters.min_volume,
+            filters.min_market_cap,
+            filters.max_market_cap,
+        )
+    )
 
 
 def _format_ib_end_datetime(end_datetime: datetime | None) -> str:

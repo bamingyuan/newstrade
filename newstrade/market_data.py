@@ -50,13 +50,4 @@ def passes_symbol_filters(snapshot: dict[str, Any], config: AppConfig, scan_wind
     if config.max_volume is not None and volume is not None and volume > config.max_volume:
         return False, f"{symbol}: above MAX_VOLUME"
 
-    market_cap = snapshot.get("market_cap")
-    if config.market_cap_filter_active and market_cap is None:
-        return False, f"{symbol}: market cap unavailable"
-
-    if config.min_market_cap is not None and market_cap is not None and market_cap < config.min_market_cap:
-        return False, f"{symbol}: below MIN_MARKET_CAP"
-    if config.max_market_cap is not None and market_cap is not None and market_cap > config.max_market_cap:
-        return False, f"{symbol}: above MAX_MARKET_CAP"
-
     return True, "passed"
