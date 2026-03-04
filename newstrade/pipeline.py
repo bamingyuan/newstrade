@@ -115,6 +115,7 @@ def _build_scanner_filters(config: AppConfig) -> IbkrScannerFilters:
         min_volume=config.min_volume,
         min_market_cap=min_market_cap,
         max_market_cap=max_market_cap,
+        stock_type_filter=config.ibkr_stock_type_filter,
     )
 
 
@@ -171,12 +172,13 @@ def run_scan(
         symbol_mode,
     )
     logger.debug(
-        "Scan run_id=%s config ibkr_host=%s ibkr_port=%s ibkr_client_id=%s ibkr_max_symbols=%s intraday_lookback_days=%s intraday_bar_size=%s end_datetime=%s",
+        "Scan run_id=%s config ibkr_host=%s ibkr_port=%s ibkr_client_id=%s ibkr_max_symbols=%s ibkr_stock_type_filter=%s intraday_lookback_days=%s intraday_bar_size=%s end_datetime=%s",
         scan_run_id,
         config.ibkr_host,
         config.ibkr_port,
         config.ibkr_client_id,
         config.ibkr_max_symbols,
+        config.ibkr_stock_type_filter,
         config.intraday_lookback_days,
         config.intraday_bar_size,
         end_datetime.isoformat() if end_datetime is not None else None,

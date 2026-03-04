@@ -94,6 +94,7 @@ The dashboard is read-only and shows:
 - `MAX_VOLUME` is local-only (IBKR scanner has no max-volume bound).
 - `MIN_MARKET_CAP` / `MAX_MARKET_CAP` are scanner-only bounds when `MARKET_CAP=1`.
 - Set `IBKR_MAX_SYMBOLS` to control how many scanner rows are requested per scan code (`TOP_PERC_GAIN` and `TOP_PERC_LOSE`) before de-duplication.
+- `IBKR_STOCK_TYPE_FILTER` applies IBKR scanner `stockTypeFilter`. Valid values are `CORP`, `ADR`, `ETF`, `REIT`, `CEF`; empty disables it.
 - Set `MARKET_CAP=0` in `.env` to disable market-cap scanner bounds.
 - Market-cap bounds are not applied to pure env symbols (`--mode env` or `SYMBOL_MODE=env`; and env-added symbols in `both`).
 - `symbols_snapshot.market_cap` stays empty in scan-stage snapshots.

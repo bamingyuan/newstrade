@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 VALID_SYMBOL_MODES = {"env", "ibkr", "both"}
 VALID_SCAN_WINDOWS = {"1d", "intraday"}
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR"}
+VALID_IBKR_STOCK_TYPE_FILTERS = {"CORP", "ADR", "ETF", "REIT", "CEF"}
 
 
 class ConfigError(ValueError):
@@ -59,6 +60,7 @@ class AppConfig:
     ibkr_client_id: int = 37
     ibkr_account_mode: str = "paper"
     ibkr_max_symbols: int = 100
+    ibkr_stock_type_filter: str | None = "CORP"
 
     timezone: str = "UTC"
     db_path: str = "./data/newstrade.db"
@@ -112,6 +114,13 @@ class AppConfig:
             raise ConfigError("OPENAI_SCORE_RETRIES must be >= 0")
         if self.ibkr_max_symbols <= 0:
             raise ConfigError("IBKR_MAX_SYMBOLS must be > 0")
+        if (
+            self.ibkr_stock_type_filter is not None
+            and self.ibkr_stock_type_filter not in VALID_IBKR_STOCK_TYPE_FILTERS
+        ):
+            raise ConfigError(
+                f"IBKR_STOCK_TYPE_FILTER must be one of {sorted(VALID_IBKR_STOCK_TYPE_FILTERS)} or empty"
+            )
 
     @property
     def db_path_obj(self) -> Path:
@@ -146,6 +155,15 @@ def _parse_optional_int(raw: str | None, default: int | None) -> int | None:
     if text == "":
         return None
     return int(text)
+
+
+def _parse_optional_stock_type_filter(raw: str | None, default: str | None) -> str | None:
+    if raw is None:
+        return default
+    text = raw.strip().upper()
+    if text == "":
+        return None
+    return text
 
 
 def _parse_optional_date(raw: str | None, default: date | None, name: str) -> date | None:
@@ -214,6 +232,7 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         ibkr_client_id=int(mapping.get("IBKR_CLIENT_ID", 37)),
         ibkr_account_mode=mapping.get("IBKR_ACCOUNT_MODE", "paper").strip().lower(),
         ibkr_max_symbols=int(mapping.get("IBKR_MAX_SYMBOLS", 100)),
+        ibkr_stock_type_filter=_parse_optional_stock_type_filter(mapping.get("IBKR_STOCK_TYPE_FILTER"), "CORP"),
         timezone=mapping.get("TIMEZONE", "UTC").strip(),
         db_path=mapping.get("DB_PATH", "./data/newstrade.db").strip(),
         log_level=mapping.get("LOG_LEVEL", "INFO").strip().upper(),

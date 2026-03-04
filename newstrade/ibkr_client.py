@@ -30,6 +30,7 @@ class IbkrScannerFilters:
     min_volume: float | None = None
     min_market_cap: float | None = None
     max_market_cap: float | None = None
+    stock_type_filter: str | None = None
 
 
 logger = logging.getLogger(__name__)
@@ -79,7 +80,7 @@ class IbkrClient:
             sub = _build_scanner_subscription(scan_code=scan_code, max_symbols=max_symbols, filters=scanner_filters)
             try:
                 logger.debug(
-                    "IBKR reqScannerData request instrument=%s locationCode=%s scanCode=%s max_symbols=%s numberOfRows=%s abovePrice=%s belowPrice=%s aboveVolume=%s marketCapAbove=%s marketCapBelow=%s",
+                    "IBKR reqScannerData request instrument=%s locationCode=%s scanCode=%s max_symbols=%s numberOfRows=%s abovePrice=%s belowPrice=%s aboveVolume=%s marketCapAbove=%s marketCapBelow=%s stockTypeFilter=%s",
                     sub.instrument,
                     sub.locationCode,
                     sub.scanCode,
@@ -90,6 +91,7 @@ class IbkrClient:
                     sub.aboveVolume,
                     sub.marketCapAbove,
                     sub.marketCapBelow,
+                    sub.stockTypeFilter,
                 )
                 data = self.ib.reqScannerData(sub)
                 logger.debug(
@@ -300,6 +302,8 @@ def _build_scanner_subscription(
             kwargs["marketCapAbove"] = filters.min_market_cap
         if filters.max_market_cap is not None:
             kwargs["marketCapBelow"] = filters.max_market_cap
+        if filters.stock_type_filter is not None:
+            kwargs["stockTypeFilter"] = filters.stock_type_filter
     return ScannerSubscription(**kwargs)
 
 
@@ -316,6 +320,7 @@ def _has_scanner_filters(filters: IbkrScannerFilters) -> bool:
             filters.min_volume,
             filters.min_market_cap,
             filters.max_market_cap,
+            filters.stock_type_filter,
         )
     )
 
