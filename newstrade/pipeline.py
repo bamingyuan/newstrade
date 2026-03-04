@@ -218,6 +218,7 @@ def run_scan(
                         "last_price": None,
                         "pct_change_1d": None,
                         "pct_change_intraday": None,
+                        "volume": None,
                         "market_cap": market_caps.get(symbol),
                         "price_source_ts_utc": utc_now_iso(),
                         "price_as_of_ts_utc": (
@@ -245,7 +246,7 @@ def run_scan(
             else:
                 failed_details.append(reason)
             logger.debug(
-                "Filter result run_id=%s symbol=%s passed=%s reason=%s last_price=%s pct_change_1d=%s pct_change_intraday=%s market_cap=%s",
+                "Filter result run_id=%s symbol=%s passed=%s reason=%s last_price=%s pct_change_1d=%s pct_change_intraday=%s volume=%s market_cap=%s",
                 scan_run_id,
                 symbol,
                 passed,
@@ -253,6 +254,7 @@ def run_scan(
                 snapshot.get("last_price"),
                 snapshot.get("pct_change_1d"),
                 snapshot.get("pct_change_intraday"),
+                snapshot.get("volume"),
                 snapshot.get("market_cap"),
             )
 
@@ -263,6 +265,7 @@ def run_scan(
                     "last_price": snapshot.get("last_price"),
                     "pct_change_1d": snapshot.get("pct_change_1d"),
                     "pct_change_intraday": snapshot.get("pct_change_intraday"),
+                    "volume": snapshot.get("volume"),
                     "market_cap": snapshot.get("market_cap"),
                     "price_source_ts_utc": snapshot.get("price_source_ts_utc", utc_now_iso()),
                     "price_as_of_ts_utc": _resolve_price_as_of_ts_utc(snapshot, end_datetime),

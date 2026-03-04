@@ -42,6 +42,14 @@ def passes_symbol_filters(snapshot: dict[str, Any], config: AppConfig, scan_wind
     if config.max_price is not None and (last_price is None or last_price > config.max_price):
         return False, f"{symbol}: above MAX_PRICE"
 
+    volume = snapshot.get("volume")
+    if (config.min_volume is not None or config.max_volume is not None) and volume is None:
+        return False, f"{symbol}: volume unavailable"
+    if config.min_volume is not None and volume is not None and volume < config.min_volume:
+        return False, f"{symbol}: below MIN_VOLUME"
+    if config.max_volume is not None and volume is not None and volume > config.max_volume:
+        return False, f"{symbol}: above MAX_VOLUME"
+
     market_cap = snapshot.get("market_cap")
     if config.market_cap_filter_active and market_cap is None:
         return False, f"{symbol}: market cap unavailable"

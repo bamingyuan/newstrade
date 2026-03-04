@@ -10,6 +10,7 @@ class SymbolSnapshot:
     last_price: float
     pct_change_1d: float | None
     pct_change_intraday: float | None
+    volume: float | None
     market_cap: float | None
     price_source_ts_utc: str
     price_as_of_ts_utc: str

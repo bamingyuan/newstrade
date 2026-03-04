@@ -32,6 +32,8 @@ class AppConfig:
     max_pct_change: float = 30.0
     min_price: float | None = 3.0
     max_price: float | None = 2000.0
+    min_volume: float | None = None
+    max_volume: float | None = None
     market_cap_enabled: bool = True
     min_market_cap: float | None = 1_000_000_000.0
     max_market_cap: float | None = 5_000_000_000_000.0
@@ -81,6 +83,8 @@ class AppConfig:
             raise ConfigError("MIN_PCT_CHANGE cannot be greater than MAX_PCT_CHANGE")
         if self.min_price is not None and self.max_price is not None and self.min_price > self.max_price:
             raise ConfigError("MIN_PRICE cannot be greater than MAX_PRICE")
+        if self.min_volume is not None and self.max_volume is not None and self.min_volume > self.max_volume:
+            raise ConfigError("MIN_VOLUME cannot be greater than MAX_VOLUME")
         if (
             self.market_cap_enabled
             and self.min_market_cap is not None
@@ -183,6 +187,8 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         max_pct_change=float(mapping.get("MAX_PCT_CHANGE", 30.0)),
         min_price=_parse_optional_float(mapping.get("MIN_PRICE"), 3.0),
         max_price=_parse_optional_float(mapping.get("MAX_PRICE"), 2000.0),
+        min_volume=_parse_optional_float(mapping.get("MIN_VOLUME"), None),
+        max_volume=_parse_optional_float(mapping.get("MAX_VOLUME"), None),
         market_cap_enabled=_parse_binary_flag(mapping.get("MARKET_CAP"), True, "MARKET_CAP"),
         min_market_cap=_parse_optional_float(mapping.get("MIN_MARKET_CAP"), 1_000_000_000.0),
         max_market_cap=_parse_optional_float(mapping.get("MAX_MARKET_CAP"), 5_000_000_000_000.0),

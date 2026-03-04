@@ -47,6 +47,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             last_price REAL,
             pct_change_1d REAL,
             pct_change_intraday REAL,
+            volume REAL,
             market_cap REAL,
             price_source_ts_utc TEXT NOT NULL,
             price_as_of_ts_utc TEXT NOT NULL,
@@ -126,6 +127,7 @@ def init_db(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "article_scores", "reasoning_tokens", "INTEGER")
     _ensure_column(conn, "article_scores", "impact_direction", "TEXT NOT NULL DEFAULT 'neutral'")
     _ensure_column(conn, "symbols_snapshot", "price_as_of_ts_utc", "TEXT NOT NULL DEFAULT ''")
+    _ensure_column(conn, "symbols_snapshot", "volume", "REAL")
     _ensure_column(conn, "news_articles", "summary", "TEXT")
     _ensure_column(conn, "news_articles", "provider", "TEXT NOT NULL DEFAULT 'yahoo_rss'")
     _ensure_column(conn, "news_articles", "provider_article_id", "TEXT")
@@ -167,9 +169,9 @@ def insert_symbol_snapshots(conn: sqlite3.Connection, rows: Iterable[dict[str, A
     conn.executemany(
         """
         INSERT INTO symbols_snapshot (
-            scan_run_id, symbol, last_price, pct_change_1d, pct_change_intraday, market_cap,
+            scan_run_id, symbol, last_price, pct_change_1d, pct_change_intraday, volume, market_cap,
             price_source_ts_utc, price_as_of_ts_utc, passed_filters
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         [
             (
@@ -178,6 +180,7 @@ def insert_symbol_snapshots(conn: sqlite3.Connection, rows: Iterable[dict[str, A
                 row.get("last_price"),
                 row.get("pct_change_1d"),
                 row.get("pct_change_intraday"),
+                row.get("volume"),
                 row.get("market_cap"),
                 row["price_source_ts_utc"],
                 row["price_as_of_ts_utc"],
@@ -351,6 +354,7 @@ def get_symbol_scores_report(conn: sqlite3.Connection, scan_run_id: int) -> list
                 ss.last_price,
                 ss.pct_change_1d,
                 ss.pct_change_intraday,
+                ss.volume,
                 ss.market_cap,
                 ss.price_as_of_ts_utc,
                 s.article_count,

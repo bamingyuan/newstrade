@@ -89,6 +89,7 @@ The dashboard is read-only and shows:
 - `symbols_snapshot.price_source_ts_utc` records when price data was fetched; `symbols_snapshot.price_as_of_ts_utc` records the market as-of timestamp used for that snapshot.
 - `news_articles.summary` stores provider summaries when available (for example Massive `description`), and is included in AI scoring context.
 - On weekends/holidays, scan continues and may use the previous trading session for some symbols. A warning is added to the run notes.
+- Set `MIN_VOLUME` / `MAX_VOLUME` in `.env` to filter by trading volume (latest IBKR daily `TRADES` bar volume). Leave either empty to disable that bound.
 - Set `MARKET_CAP=0` in `.env` to skip market-cap API calls entirely. In that mode, market-cap filters are disabled and `symbols_snapshot.market_cap` stays empty.
 - If market-cap filters are active and cap data is unavailable for a symbol, that symbol is filtered out.
 - Set `LOG_LEVEL=DEBUG` to print transparent IBKR scan logs (connect params, scanner request args, historical-data request args, bar counts, and per-symbol filter outcomes).

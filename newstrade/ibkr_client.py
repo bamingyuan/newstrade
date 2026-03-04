@@ -182,12 +182,14 @@ class IbkrClient:
         pct_change_1d = None
         pct_change_intraday = None
         latest_daily_bar_date: date | None = None
+        latest_daily_volume: float | None = None
 
         if daily_bars:
             closes = [float(bar.close) for bar in daily_bars if getattr(bar, "close", None) is not None]
             if closes:
                 last_price = closes[-1]
             latest_daily_bar_date = _parse_bar_date(getattr(daily_bars[-1], "date", None))
+            latest_daily_volume = _as_float(getattr(daily_bars[-1], "volume", None))
             if len(closes) >= 2:
                 pct_change_1d = pct_change(closes[-2], closes[-1])
 
@@ -206,6 +208,7 @@ class IbkrClient:
             "last_price": float(last_price),
             "pct_change_1d": pct_change_1d,
             "pct_change_intraday": pct_change_intraday,
+            "volume": latest_daily_volume,
             "latest_daily_bar_date": latest_daily_bar_date.isoformat() if latest_daily_bar_date else None,
             "price_source_ts_utc": datetime.now(timezone.utc).isoformat(),
             "price_as_of_ts_utc": (
@@ -215,11 +218,12 @@ class IbkrClient:
             ),
         }
         logger.debug(
-            "IBKR snapshot result symbol=%s last_price=%s pct_change_1d=%s pct_change_intraday=%s latest_daily_bar_date=%s",
+            "IBKR snapshot result symbol=%s last_price=%s pct_change_1d=%s pct_change_intraday=%s volume=%s latest_daily_bar_date=%s",
             symbol,
             snapshot["last_price"],
             snapshot["pct_change_1d"],
             snapshot["pct_change_intraday"],
+            snapshot["volume"],
             snapshot["latest_daily_bar_date"],
         )
         return snapshot
@@ -253,4 +257,13 @@ def _parse_bar_date(raw: Any) -> date | None:
     try:
         return datetime.fromisoformat(text).date()
     except ValueError:
+        return None
+
+
+def _as_float(raw: Any) -> float | None:
+    try:
+        if raw is None:
+            return None
+        return float(raw)
+    except (TypeError, ValueError):
         return None
