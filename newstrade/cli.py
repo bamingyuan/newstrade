@@ -106,11 +106,15 @@ def main(argv: list[str] | None = None) -> int:
             url = str(event.get("url", ""))
             title = str(event.get("title", ""))
             impact_direction = str(event.get("impact_direction", ""))
+            main_symbol = str(event.get("main_symbol", ""))
+            relevance_score = event.get("relevance_score", "")
             print(f"[{current}/{total}] {status}")
             print(f"symbol: {symbol}")
             print(f"url: {url}")
             print(f"title: {title}")
             print(f"impact_direction: {impact_direction}")
+            print(f"main_symbol: {main_symbol}")
+            print(f"relevance_score: {relevance_score}")
             print(
                 "tokens: "
                 f"prompt={event.get('prompt_tokens', '')} "

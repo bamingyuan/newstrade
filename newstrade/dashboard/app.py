@@ -46,6 +46,9 @@ def load_symbol_detail(conn: sqlite3.Connection, scan_run_id: int, symbol: str) 
             a.seriousness_score,
             a.confidence,
             a.reason_tags_json,
+            a.main_symbol,
+            a.mentioned_symbols_json,
+            a.relevance_score,
             a.error_message
         FROM news_articles n
         LEFT JOIN article_scores a
@@ -115,6 +118,7 @@ def main() -> None:
                 move_column,
                 "weighted_impact_score",
                 "weighted_seriousness_score",
+                "avg_relevance_score",
                 "article_count",
                 "bullish_bearish_label",
                 "top_reason_tags",

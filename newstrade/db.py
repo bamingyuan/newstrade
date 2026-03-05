@@ -86,6 +86,9 @@ def init_db(conn: sqlite3.Connection) -> None:
             impact_horizon TEXT NOT NULL,
             reason_tags_json TEXT NOT NULL,
             is_material_news INTEGER NOT NULL,
+            main_symbol TEXT,
+            mentioned_symbols_json TEXT NOT NULL DEFAULT '[]',
+            relevance_score INTEGER NOT NULL DEFAULT 0,
             scored_ts_utc TEXT NOT NULL,
             prompt_tokens INTEGER,
             completion_tokens INTEGER,
@@ -126,6 +129,9 @@ def init_db(conn: sqlite3.Connection) -> None:
     _ensure_column(conn, "article_scores", "total_tokens", "INTEGER")
     _ensure_column(conn, "article_scores", "reasoning_tokens", "INTEGER")
     _ensure_column(conn, "article_scores", "impact_direction", "TEXT NOT NULL DEFAULT 'neutral'")
+    _ensure_column(conn, "article_scores", "main_symbol", "TEXT")
+    _ensure_column(conn, "article_scores", "mentioned_symbols_json", "TEXT NOT NULL DEFAULT '[]'")
+    _ensure_column(conn, "article_scores", "relevance_score", "INTEGER NOT NULL DEFAULT 0")
     _ensure_column(conn, "symbols_snapshot", "price_as_of_ts_utc", "TEXT NOT NULL DEFAULT ''")
     _ensure_column(conn, "symbols_snapshot", "volume", "REAL")
     _ensure_column(conn, "news_articles", "summary", "TEXT")
@@ -262,9 +268,10 @@ def insert_article_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
         """
         INSERT OR REPLACE INTO article_scores (
             scan_run_id, symbol, article_id, openai_model, summary, impact_score, impact_direction, seriousness_score,
-            confidence, impact_horizon, reason_tags_json, is_material_news, scored_ts_utc,
+            confidence, impact_horizon, reason_tags_json, is_material_news, main_symbol, mentioned_symbols_json,
+            relevance_score, scored_ts_utc,
             prompt_tokens, completion_tokens, total_tokens, reasoning_tokens, error_message
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             row["scan_run_id"],
@@ -279,6 +286,9 @@ def insert_article_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
             row["impact_horizon"],
             row["reason_tags_json"],
             int(bool(row["is_material_news"])),
+            row.get("main_symbol"),
+            row.get("mentioned_symbols_json", "[]"),
+            row.get("relevance_score", 0),
             row["scored_ts_utc"],
             row.get("prompt_tokens"),
             row.get("completion_tokens"),

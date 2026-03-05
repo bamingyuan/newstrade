@@ -89,6 +89,7 @@ The dashboard is read-only and shows:
 - For 2-week historical backfill, set `NEWS_LOOKBACK_HOURS=336`.
 - `symbols_snapshot.price_source_ts_utc` records when price data was fetched; `symbols_snapshot.price_as_of_ts_utc` records the market as-of timestamp used for that snapshot.
 - `news_articles.summary` stores provider summaries when available (for example Massive `description`), and is included in AI scoring context.
+- AI scoring now includes per-article symbol relevance: `main_symbol`, `mentioned_symbols_json`, and `relevance_score` (`0..100`). Relevance is penalized when the detected main symbol differs from the expected symbol, and when multiple symbols are discussed.
 - On weekends/holidays, scan continues and may use the previous trading session for some symbols. A warning is added to the run notes.
 - `MIN_PRICE` / `MAX_PRICE` are sent to the IBKR scanner and still validated locally after snapshot fetch.
 - `MIN_VOLUME` is sent to the scanner as `aboveVolume` and still validated locally from latest IBKR daily `TRADES` volume.

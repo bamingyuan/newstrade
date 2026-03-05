@@ -72,6 +72,67 @@ def _normalize_impact_from_direction(scored: dict[str, Any]) -> dict[str, Any]:
     return normalized
 
 
+def _normalize_symbol_code(value: Any) -> str:
+    text = str(value or "").strip().upper()
+    cleaned = "".join(ch for ch in text if ch.isalnum() or ch in {".", "-"})
+    return cleaned[:24]
+
+
+def _normalize_article_relevance(scored: dict[str, Any], expected_symbol: str) -> dict[str, Any]:
+    expected = _normalize_symbol_code(expected_symbol)
+    main_symbol = _normalize_symbol_code(scored.get("main_symbol", ""))
+
+    mentioned_symbols: list[str] = []
+    seen: set[str] = set()
+    raw_mentioned = scored.get("mentioned_symbols", [])
+    if isinstance(raw_mentioned, list):
+        iterable = raw_mentioned
+    else:
+        iterable = [raw_mentioned]
+    for value in iterable:
+        symbol = _normalize_symbol_code(value)
+        if not symbol or symbol in seen:
+            continue
+        seen.add(symbol)
+        mentioned_symbols.append(symbol)
+        if len(mentioned_symbols) >= 12:
+            break
+
+    if main_symbol and main_symbol not in seen:
+        mentioned_symbols.insert(0, main_symbol)
+        seen.add(main_symbol)
+    if len(mentioned_symbols) > 12:
+        mentioned_symbols = mentioned_symbols[:12]
+
+    try:
+        raw_score = int(scored.get("relevance_score", 0))
+    except (TypeError, ValueError):
+        raw_score = 0
+    relevance_score = max(0, min(100, raw_score))
+
+    # Deterministic penalty: if the article's detected main symbol differs from the expected symbol,
+    # force low relevance regardless of model optimism.
+    if expected and main_symbol and main_symbol != expected:
+        relevance_score = min(relevance_score, 20)
+    elif expected and not main_symbol:
+        relevance_score = min(relevance_score, 35)
+
+    # Deterministic penalty: multi-symbol articles are less relevant than single-symbol focus.
+    if len(mentioned_symbols) > 1:
+        penalty = min(50, 12 * (len(mentioned_symbols) - 1))
+        relevance_score = max(0, relevance_score - penalty)
+
+    # If expected symbol is not even in the detected set, keep relevance low.
+    if expected and expected not in seen:
+        relevance_score = min(relevance_score, 25)
+
+    normalized = dict(scored)
+    normalized["main_symbol"] = main_symbol
+    normalized["mentioned_symbols"] = mentioned_symbols
+    normalized["relevance_score"] = relevance_score
+    return normalized
+
+
 def _resolve_scan_window(config: AppConfig, window: str | None) -> str:
     return (window or config.scan_window_default).strip().lower()
 
@@ -472,6 +533,7 @@ def run_score(
             scored = build_failed_score(str(exc), usage=getattr(exc, "usage", None))
             error_message = str(exc)
         scored = _normalize_impact_from_direction(scored)
+        scored = _normalize_article_relevance(scored, expected_symbol=str(article["symbol"]))
 
         insert_article_score(
             conn,
@@ -488,6 +550,9 @@ def run_score(
                 "impact_horizon": scored["impact_horizon"],
                 "reason_tags_json": json.dumps(scored["reason_tags"]),
                 "is_material_news": scored["is_material_news"],
+                "main_symbol": scored["main_symbol"],
+                "mentioned_symbols_json": json.dumps(scored["mentioned_symbols"]),
+                "relevance_score": scored["relevance_score"],
                 "scored_ts_utc": scored.get("scored_ts_utc", utc_now_iso()),
                 "error_message": error_message,
                 "prompt_tokens": scored.get("prompt_tokens"),
@@ -507,6 +572,8 @@ def run_score(
                     "url": article["url"],
                     "title": article["title"],
                     "impact_direction": scored["impact_direction"],
+                    "main_symbol": scored["main_symbol"],
+                    "relevance_score": scored["relevance_score"],
                     "status": "error" if error_message else "ok",
                     "error_message": error_message,
                     "prompt_tokens": scored.get("prompt_tokens"),

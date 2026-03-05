@@ -48,6 +48,9 @@ SCORING_JSON_SCHEMA: dict[str, Any] = {
         "impact_horizon",
         "reason_tags",
         "is_material_news",
+        "main_symbol",
+        "mentioned_symbols",
+        "relevance_score",
     ],
     "properties": {
         "summary": {"type": "string", "maxLength": 400},
@@ -67,6 +70,13 @@ SCORING_JSON_SCHEMA: dict[str, Any] = {
             "uniqueItems": True,
         },
         "is_material_news": {"type": "boolean"},
+        "main_symbol": {"type": "string", "maxLength": 24},
+        "mentioned_symbols": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 24},
+            "maxItems": 12,
+        },
+        "relevance_score": {"type": "integer", "minimum": 0, "maximum": 100},
     },
 }
 
@@ -90,6 +100,13 @@ OPENAI_SCORING_JSON_SCHEMA: dict[str, Any] = {
             "maxItems": 4,
         },
         "is_material_news": {"type": "boolean"},
+        "main_symbol": {"type": "string", "maxLength": 24},
+        "mentioned_symbols": {
+            "type": "array",
+            "items": {"type": "string", "maxLength": 24},
+            "maxItems": 12,
+        },
+        "relevance_score": {"type": "integer", "minimum": 0, "maximum": 100},
     },
 }
 
@@ -130,7 +147,11 @@ class AIScorer:
             "Keep summary concise and factual. "
             "Impact scoring rubric: -100 very bearish, 0 neutral, +100 very bullish. "
             "Direction rule: bearish must have negative impact_score, neutral must be 0, bullish must be positive. "
-            "Magnitude guide: 1-20 mild, 21-50 moderate, 51-80 strong, 81-100 extreme."
+            "Magnitude guide: 1-20 mild, 21-50 moderate, 51-80 strong, 81-100 extreme. "
+            "Also identify the article's main ticker symbol and list any mentioned ticker symbols. "
+            "Relevance scoring rubric for the provided symbol: 90-100 directly and primarily about it, "
+            "60-89 meaningfully about it but with some focus on peers/sector, "
+            "20-59 only peripheral mention, 0-19 mostly about a different symbol."
         )
         user = (
             "Score this stock news item.\n"
@@ -141,7 +162,8 @@ class AIScorer:
             f"Published UTC: {article.get('published_ts_utc', '')}\n"
             f"URL: {article['url']}\n\n"
             "Interpret likely directional effect for the stock only. "
-            "Return impact_direction as one of bearish/neutral/bullish."
+            "Return impact_direction as one of bearish/neutral/bullish. "
+            "Use uppercase ticker codes in main_symbol and mentioned_symbols when possible."
         )
         return [
             {"role": "system", "content": system},
@@ -263,6 +285,33 @@ def validate_scoring_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
     if len(summary) > 400:
         summary = summary[:400]
 
+    def _normalize_symbol(value: Any) -> str:
+        text = str(value or "").strip().upper()
+        allowed = "".join(ch for ch in text if ch.isalnum() or ch in {".", "-"})
+        return allowed[:24]
+
+    mentioned_symbols: list[str] = []
+    seen_symbols: set[str] = set()
+    raw_mentioned = normalized_payload.get("mentioned_symbols")
+    if isinstance(raw_mentioned, list):
+        for value in raw_mentioned:
+            token = _normalize_symbol(value)
+            if not token or token in seen_symbols:
+                continue
+            seen_symbols.add(token)
+            mentioned_symbols.append(token)
+            if len(mentioned_symbols) >= 12:
+                break
+
+    main_symbol = _normalize_symbol(normalized_payload.get("main_symbol", ""))
+    if main_symbol and main_symbol not in seen_symbols:
+        mentioned_symbols.insert(0, main_symbol)
+    if len(mentioned_symbols) > 12:
+        mentioned_symbols = mentioned_symbols[:12]
+
+    relevance_score = int(normalized_payload["relevance_score"])
+    relevance_score = max(0, min(100, relevance_score))
+
     return {
         "summary": summary,
         "impact_score": int(normalized_payload["impact_score"]),
@@ -272,6 +321,9 @@ def validate_scoring_payload(payload: Mapping[str, Any]) -> dict[str, Any]:
         "impact_horizon": str(normalized_payload["impact_horizon"]),
         "reason_tags": list(normalized_payload["reason_tags"]),
         "is_material_news": bool(normalized_payload["is_material_news"]),
+        "main_symbol": main_symbol,
+        "mentioned_symbols": mentioned_symbols,
+        "relevance_score": relevance_score,
     }
 
 
@@ -289,6 +341,9 @@ def build_failed_score(
         "impact_horizon": "short_term",
         "reason_tags": ["other"],
         "is_material_news": False,
+        "main_symbol": "",
+        "mentioned_symbols": [],
+        "relevance_score": 0,
         "error_message": error_message,
         "scored_ts_utc": datetime.now(timezone.utc).isoformat(),
         "prompt_tokens": usage_map.get("prompt_tokens"),

@@ -47,6 +47,9 @@ class ArticleScore:
     reason_tags_json: str
     is_material_news: bool
     scored_ts_utc: str
+    main_symbol: str | None = None
+    mentioned_symbols_json: str = "[]"
+    relevance_score: int = 0
 
 
 @dataclass

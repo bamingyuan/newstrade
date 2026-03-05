@@ -27,6 +27,7 @@ def build_report_dataframe(conn: sqlite3.Connection, scan_run_id: int) -> pd.Dat
                 "weighted_seriousness_score",
                 "bullish_bearish_label",
                 "top_reason_tags",
+                "avg_relevance_score",
                 "score_ts_utc",
             ]
         )
@@ -49,6 +50,7 @@ def build_report_dataframe(conn: sqlite3.Connection, scan_run_id: int) -> pd.Dat
                 "weighted_seriousness_score": row["weighted_seriousness_score"],
                 "bullish_bearish_label": row["bullish_bearish_label"],
                 "top_reason_tags": ", ".join(top_reason_tags(scored_rows)),
+                "avg_relevance_score": _average_relevance(scored_rows),
                 "score_ts_utc": row["score_ts_utc"],
             }
         )
@@ -74,6 +76,7 @@ def report_to_console(df: pd.DataFrame, top: int = 30) -> str:
             "volume",
             "weighted_impact_score",
             "weighted_seriousness_score",
+            "avg_relevance_score",
             "article_count",
             "bullish_bearish_label",
             "top_reason_tags",
@@ -81,6 +84,22 @@ def report_to_console(df: pd.DataFrame, top: int = 30) -> str:
     ].copy()
 
     return view.to_string(index=False)
+
+
+def _average_relevance(rows: list[dict[str, object]]) -> float:
+    values: list[float] = []
+    for row in rows:
+        raw = row.get("relevance_score")
+        if raw is None:
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            continue
+        values.append(value)
+    if not values:
+        return 0.0
+    return round(sum(values) / len(values), 2)
 
 
 def export_report_csv(
