@@ -6,6 +6,7 @@ import json
 import inspect
 import logging
 from typing import Any, Callable
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from .aggregate import compute_symbol_aggregate
@@ -38,6 +39,18 @@ logger = logging.getLogger(__name__)
 
 class PipelineError(RuntimeError):
     """Raised when a pipeline stage cannot complete."""
+
+
+def _hostname_matches_allowed_domains(url: str, allowed_domains: set[str]) -> bool:
+    if not allowed_domains:
+        return True
+    try:
+        hostname = (urlparse(url).hostname or "").strip().lower().rstrip(".")
+    except ValueError:
+        return False
+    if not hostname:
+        return False
+    return any(hostname == domain or hostname.endswith(f".{domain}") for domain in allowed_domains)
 
 
 def _normalize_impact_from_direction(scored: dict[str, Any]) -> dict[str, Any]:
@@ -337,6 +350,7 @@ def run_news(
     article_rows: list[dict[str, Any]] = []
     as_of_datetime = _resolve_time_travel_end_datetime(config)
     as_of_datetime_utc = as_of_datetime.astimezone(timezone.utc) if as_of_datetime is not None else None
+    yahoo_rss_allowed_domains = {domain.lower() for domain in config.yahoo_rss_allowed_domains}
     massive_enabled = config.massive_news_enabled and bool(config.massive_api_key.strip())
     massive_limiter = (
         MassiveRateLimiter(max_calls_per_minute=config.massive_max_calls_per_minute) if massive_enabled else None
@@ -378,6 +392,14 @@ def run_news(
                 pass
 
         for item in fetched_items:
+            provider = str(item.get("provider", "yahoo_rss")).strip().lower() or "yahoo_rss"
+            url = str(item.get("url", "")).strip()
+            if not url:
+                continue
+            if provider == "yahoo_rss" and yahoo_rss_allowed_domains:
+                if not _hostname_matches_allowed_domains(url, yahoo_rss_allowed_domains):
+                    continue
+
             published_ts_utc = str(item.get("published_ts_utc") or "").strip()
             if as_of_datetime_utc is not None and published_ts_utc:
                 published_dt = parse_iso_utc(published_ts_utc)
@@ -392,14 +414,14 @@ def run_news(
                 {
                     "scan_run_id": scan_run_id,
                     "symbol": symbol,
-                    "url": item["url"],
+                    "url": url,
                     "title": item["title"],
                     "source": item["source"],
                     "published_ts_utc": published_ts_utc,
                     "rss_fetched_ts_utc": item["rss_fetched_ts_utc"],
                     "dedup_key": dedup_key,
                     "summary": str(item.get("summary", "")).strip() or None,
-                    "provider": str(item.get("provider", "yahoo_rss")).strip() or "yahoo_rss",
+                    "provider": provider,
                     "provider_article_id": str(item.get("provider_article_id", "")).strip() or None,
                 }
             )

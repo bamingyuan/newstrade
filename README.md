@@ -82,6 +82,7 @@ The dashboard is read-only and shows:
 - Set `SCAN_TIME_TRAVEL=1` and `SCAN_AS_OF_DATE=YYYY-MM-DD` to test scans/news against a past date (interpreted as US close, 16:00 `America/New_York`).
 - When time travel is enabled, scan mode must be `env` (`newstrade scan --mode env ...`), otherwise the scan fails with a clear message.
 - `newstrade news` merges Yahoo RSS and Massive results when `MASSIVE_API_KEY` is set, and deduplicates by canonical article URL.
+- Set `YAHOO_RSS_ALLOWED_DOMAINS=finance.yahoo.com,fool.com` to allow only those Yahoo RSS article domains (subdomains match, empty means allow all).
 - Set `MASSIVE_NEWS=0` to disable Massive API calls entirely, even if `MASSIVE_API_KEY` is present.
 - Massive is optional; if `MASSIVE_API_KEY` is empty, the pipeline uses Yahoo only.
 - For Massive free-tier usage, keep `MASSIVE_MAX_CALLS_PER_MINUTE=5`.

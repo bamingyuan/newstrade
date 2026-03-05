@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 from typing import Mapping
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -43,6 +44,7 @@ class AppConfig:
     max_news_articles_per_symbol: int = 8
     yahoo_rss_region: str = "US"
     yahoo_rss_lang: str = "en-US"
+    yahoo_rss_allowed_domains: list[str] = field(default_factory=list)
     massive_news_enabled: bool = True
     massive_api_key: str = ""
     massive_max_calls_per_minute: int = 5
@@ -191,6 +193,31 @@ def _parse_binary_flag(raw: str | None, default: bool, name: str) -> bool:
     raise ConfigError(f"{name} must be 0 or 1")
 
 
+_DOMAIN_PATTERN = re.compile(r"^[a-z0-9-]+(\.[a-z0-9-]+)+$")
+
+
+def _parse_domains(raw: str | None, name: str) -> list[str]:
+    if raw is None:
+        return []
+
+    domains: list[str] = []
+    seen: set[str] = set()
+    for token in raw.split(","):
+        domain = token.strip().lower().rstrip(".")
+        if not domain:
+            continue
+        if "/" in domain or "?" in domain or "#" in domain or "://" in domain:
+            raise ConfigError(f"{name} must be a comma-separated list of bare domains (example: finance.yahoo.com,fool.com)")
+        if ":" in domain:
+            domain = domain.split(":", 1)[0].strip()
+        if not _DOMAIN_PATTERN.fullmatch(domain):
+            raise ConfigError(f"{name} contains invalid domain '{domain}'")
+        if domain not in seen:
+            seen.add(domain)
+            domains.append(domain)
+    return domains
+
+
 def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
     symbol_mode = mapping.get("SYMBOL_MODE", "both").strip().lower()
     symbols = _parse_symbols(mapping.get("SYMBOLS", "AAPL,MSFT,NVDA"))
@@ -217,6 +244,10 @@ def build_config_from_mapping(mapping: Mapping[str, str]) -> AppConfig:
         max_news_articles_per_symbol=int(mapping.get("MAX_NEWS_ARTICLES_PER_SYMBOL", 8)),
         yahoo_rss_region=mapping.get("YAHOO_RSS_REGION", "US").strip(),
         yahoo_rss_lang=mapping.get("YAHOO_RSS_LANG", "en-US").strip(),
+        yahoo_rss_allowed_domains=_parse_domains(
+            mapping.get("YAHOO_RSS_ALLOWED_DOMAINS"),
+            "YAHOO_RSS_ALLOWED_DOMAINS",
+        ),
         massive_news_enabled=_parse_binary_flag(mapping.get("MASSIVE_NEWS"), True, "MASSIVE_NEWS"),
         massive_api_key=mapping.get("MASSIVE_API_KEY", "").strip(),
         massive_max_calls_per_minute=int(mapping.get("MASSIVE_MAX_CALLS_PER_MINUTE", 5)),
