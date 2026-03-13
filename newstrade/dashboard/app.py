@@ -136,6 +136,12 @@ st.markdown(
         margin-bottom: 0.8rem;
         line-height: 1.4;
     }
+    .article-meta {
+        margin-bottom: 0.75rem;
+        color: #475467;
+        font-size: 0.9rem;
+        line-height: 1.45;
+    }
     .article-summary {
         margin-bottom: 0.8rem;
         color: #344054;
@@ -286,7 +292,10 @@ def load_symbol_detail(conn: sqlite3.Connection, scan_run_id: int, symbol: str) 
             n.published_ts_utc,
             n.title,
             n.url,
-            COALESCE(a.summary, n.summary) AS summary
+            COALESCE(a.summary, n.summary) AS summary,
+            a.relevance_score,
+            a.seriousness_score,
+            a.confidence
         FROM news_articles n
         LEFT JOIN article_scores a
           ON a.article_id = n.article_id
@@ -335,6 +344,13 @@ def _format_timestamp(value: object) -> str:
         return str(value)
 
     return dt_value.strftime("%Y-%m-%d %H:%M")
+
+
+def _format_integer(value: object) -> str:
+    numeric = _coerce_float(value)
+    if numeric is None:
+        return "n/a"
+    return str(int(round(numeric)))
 
 
 def _pct_change_style(value: object, max_abs_change: float) -> tuple[str, str, str]:
@@ -446,6 +462,9 @@ def _render_articles(detail_df: pd.DataFrame) -> None:
     for _, article in detail_df.iterrows():
         url = str(article.get("url") or "").strip()
         summary = str(article.get("summary") or "").strip()
+        relevance = _format_integer(article.get("relevance_score"))
+        seriousness = _format_integer(article.get("seriousness_score"))
+        confidence = _format_integer(article.get("confidence"))
         safe_url = html.escape(url, quote=True)
         link_html = (
             f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_url}</a>'
@@ -453,10 +472,18 @@ def _render_articles(detail_df: pd.DataFrame) -> None:
             else "n/a"
         )
         summary_html = f'<div class="article-summary">{html.escape(summary)}</div>' if summary else ""
+        meta_html = (
+            f'<div class="article-meta">'
+            f'Relevance: {html.escape(relevance)} | '
+            f'Seriousness: {html.escape(seriousness)} | '
+            f'Confidence: {html.escape(confidence)}'
+            f"</div>"
+        )
 
         article_html = f"""
         <div class="article-card">
             <div class="article-title">{html.escape(str(article.get("title") or "Untitled"))}</div>
+            {meta_html}
             {summary_html}
             <div class="article-row">
                 <span class="article-label">Published:</span>
