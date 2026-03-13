@@ -110,7 +110,7 @@ st.markdown(
         margin-top: 0.15rem;
         margin-bottom: 0.85rem;
     }
-    .sticky-footer-nav {
+    .sticky-footer-shell {
         position: fixed;
         left: 50%;
         bottom: 0.75rem;
@@ -118,43 +118,46 @@ st.markdown(
         width: min(720px, calc(100vw - 1.7rem));
         z-index: 20;
         padding: 0.7rem;
-        border: 1px solid rgba(215, 223, 235, 0.95);
+        border: 1px solid #d7dfeb;
         border-radius: 18px;
-        background: rgba(255, 255, 255, 0.94);
+        background: #ffffff;
         box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
-        backdrop-filter: blur(10px);
-        display: grid;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.75rem;
     }
-    .sticky-footer-nav form {
-        margin: 0;
+    div.st-key-sticky_nav_prev,
+    div.st-key-sticky_nav_next {
+        position: fixed;
+        bottom: 1.45rem;
+        width: calc(min(720px, calc(100vw - 1.7rem)) / 2 - 1.075rem);
+        z-index: 21;
     }
-    .sticky-footer-nav-button {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        width: 100%;
+    div.st-key-sticky_nav_prev {
+        left: calc(50% - min(720px, calc(100vw - 1.7rem)) / 2 + 0.7rem);
+    }
+    div.st-key-sticky_nav_next {
+        right: calc(50% - min(720px, calc(100vw - 1.7rem)) / 2 + 0.7rem);
+    }
+    div.st-key-sticky_nav_prev button,
+    div.st-key-sticky_nav_next button {
         min-height: 3rem;
         border-radius: 14px;
         border: 1px solid #d0d5dd;
         background: #ffffff;
         color: #101828;
-        text-decoration: none;
-        font-weight: 600;
+        box-shadow: none;
+        opacity: 1;
     }
-    .sticky-footer-nav-button:hover {
+    div.st-key-sticky_nav_prev button:hover,
+    div.st-key-sticky_nav_next button:hover {
         border-color: #98a2b3;
         background: #f8fafc;
+        color: #101828;
     }
-    .sticky-footer-nav-button.is-disabled {
-        color: #98a2b3;
+    div.st-key-sticky_nav_prev button:disabled,
+    div.st-key-sticky_nav_next button:disabled {
+        border-color: #d0d5dd;
         background: #f9fafb;
-        pointer-events: none;
-        cursor: default;
-    }
-    .sticky-footer-spacer {
-        min-height: 3rem;
+        color: #98a2b3;
+        opacity: 1;
     }
     @media (max-width: 640px) {
         .block-container {
@@ -175,11 +178,51 @@ st.markdown(
         .metric-value {
             text-align: left;
         }
+        div.st-key-sticky_nav_prev,
+        div.st-key-sticky_nav_next {
+            width: calc((100vw - 1.7rem - 1.4rem - 0.75rem) / 2);
+        }
+        div.st-key-sticky_nav_prev {
+            left: 1.55rem;
+        }
+        div.st-key-sticky_nav_next {
+            right: 1.55rem;
+        }
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
+
+
+@st.cache_data(show_spinner=False, ttl=30)
+def load_run_ids_cached(db_path: str) -> list[int]:
+    conn = connect_db(db_path)
+    init_db(conn)
+    try:
+        return get_latest_scan_run_ids(conn)
+    finally:
+        conn.close()
+
+
+@st.cache_data(show_spinner=False, ttl=30)
+def load_report_dataframe_cached(db_path: str, scan_run_id: int) -> pd.DataFrame:
+    conn = connect_db(db_path)
+    init_db(conn)
+    try:
+        return build_report_dataframe(conn, scan_run_id)
+    finally:
+        conn.close()
+
+
+@st.cache_data(show_spinner=False, ttl=30)
+def load_symbol_detail_cached(db_path: str, scan_run_id: int, symbol: str) -> pd.DataFrame:
+    conn = connect_db(db_path)
+    init_db(conn)
+    try:
+        return load_symbol_detail(conn, scan_run_id, symbol)
+    finally:
+        conn.close()
 
 
 def load_symbol_detail(conn: sqlite3.Connection, scan_run_id: int, symbol: str) -> pd.DataFrame:
@@ -252,26 +295,21 @@ def _pct_change_style(value: object, max_abs_change: float) -> tuple[str, str, s
     return "#f5f7fa", "#d0d5dd", "#344054"
 
 
-def _get_query_param_int(name: str) -> int | None:
-    raw = st.query_params.get(name)
-    if raw is None or raw == "":
-        return None
-    if isinstance(raw, list):
-        raw = raw[0] if raw else None
-    if raw is None:
-        return None
-    try:
-        return int(str(raw))
-    except (TypeError, ValueError):
-        return None
+def _sync_selected_index(index_state_key: str, slider_state_key: str, symbols: list[str]) -> None:
+    current_symbol = st.session_state.get(slider_state_key)
+    if current_symbol in symbols:
+        st.session_state[index_state_key] = symbols.index(current_symbol)
 
 
-def _clamp_index(value: int | None, size: int) -> int:
-    if size <= 0:
-        return 0
-    if value is None:
-        return 0
-    return max(0, min(value, size - 1))
+def _step_selected_index(index_state_key: str, slider_state_key: str, symbols: list[str], delta: int) -> None:
+    if not symbols:
+        return
+    current_index = st.session_state.get(index_state_key, 0)
+    if not isinstance(current_index, int):
+        current_index = 0
+    next_index = max(0, min(current_index + delta, len(symbols) - 1))
+    st.session_state[index_state_key] = next_index
+    st.session_state[slider_state_key] = symbols[next_index]
 
 
 def _render_symbol_card(row: pd.Series, max_abs_change: float) -> None:
@@ -352,23 +390,16 @@ def main() -> None:
     st.caption("Mobile-first view of abnormal movers and the news driving them.")
 
     config = load_config()
-    conn = connect_db(config.db_path)
-    init_db(conn)
-
-    run_ids = get_latest_scan_run_ids(conn)
+    run_ids = load_run_ids_cached(config.db_path)
     if not run_ids:
         st.info("No scan runs found yet. Use CLI `scan` then `news` and `score`.")
-        conn.close()
         return
 
-    query_run = _get_query_param_int("run")
-    initial_run = query_run if query_run in run_ids else run_ids[0]
-    selected_run = st.selectbox("Run", run_ids, index=run_ids.index(initial_run))
+    selected_run = st.selectbox("Run", run_ids)
 
-    df = build_report_dataframe(conn, selected_run)
+    df = load_report_dataframe_cached(config.db_path, selected_run)
     if df.empty:
         st.warning("No symbol scores for this run yet. Execute CLI `score` command.")
-        conn.close()
         return
 
     pct_change_numeric = pd.to_numeric(df["pct_change_1d"], errors="coerce")
@@ -383,8 +414,12 @@ def main() -> None:
     )
 
     symbols = filtered["symbol"].astype(str).tolist()
-    query_symbol_index = _get_query_param_int("symbol_index")
-    selected_index = _clamp_index(query_symbol_index, len(symbols))
+    index_state_key = f"selected_symbol_index_{selected_run}"
+    slider_state_key = f"selected_symbol_slider_{selected_run}"
+    selected_index = st.session_state.get(index_state_key, 0)
+    if not isinstance(selected_index, int) or selected_index < 0 or selected_index >= len(symbols):
+        selected_index = 0
+    st.session_state[index_state_key] = selected_index
 
     if len(symbols) == 1:
         selected_symbol = symbols[0]
@@ -395,48 +430,45 @@ def main() -> None:
             unsafe_allow_html=True,
         )
     else:
-        selected_symbol = st.select_slider("Browse symbols", options=symbols, value=symbols[selected_index])
+        if st.session_state.get(slider_state_key) not in symbols:
+            st.session_state[slider_state_key] = symbols[selected_index]
+        selected_symbol = st.select_slider(
+            "Browse symbols",
+            options=symbols,
+            key=slider_state_key,
+            on_change=_sync_selected_index,
+            args=(index_state_key, slider_state_key, symbols),
+        )
         selected_index = symbols.index(selected_symbol)
         st.markdown(
             f'<div class="nav-caption">Symbol {selected_index + 1} of {len(symbols)}</div>',
             unsafe_allow_html=True,
         )
 
-    if query_run != selected_run or query_symbol_index != selected_index:
-        st.query_params["run"] = str(selected_run)
-        st.query_params["symbol_index"] = str(selected_index)
-
     selected_row = filtered.iloc[selected_index]
     max_abs_change = float(pd.to_numeric(filtered["pct_change_1d"], errors="coerce").abs().fillna(0).max())
 
     _render_symbol_card(selected_row, max_abs_change)
-    detail_df = load_symbol_detail(conn, selected_run, selected_symbol)
+    detail_df = load_symbol_detail_cached(config.db_path, selected_run, selected_symbol)
     _render_articles(detail_df)
 
-    previous_index = max(selected_index - 1, 0)
-    next_index = min(selected_index + 1, len(symbols) - 1)
-    previous_class = "sticky-footer-nav-button is-disabled" if selected_index == 0 else "sticky-footer-nav-button"
-    next_class = "sticky-footer-nav-button is-disabled" if selected_index == len(symbols) - 1 else "sticky-footer-nav-button"
-    previous_disabled = "disabled" if selected_index == 0 else ""
-    next_disabled = "disabled" if selected_index == len(symbols) - 1 else ""
-    footer_html = f"""
-    <div class="sticky-footer-nav" aria-label="Symbol navigation">
-        <form method="get">
-            <input type="hidden" name="run" value="{selected_run}">
-            <input type="hidden" name="symbol_index" value="{previous_index}">
-            <button type="submit" class="{previous_class}" {previous_disabled}>Previous</button>
-        </form>
-        <form method="get">
-            <input type="hidden" name="run" value="{selected_run}">
-            <input type="hidden" name="symbol_index" value="{next_index}">
-            <button type="submit" class="{next_class}" {next_disabled}>Next</button>
-        </form>
-    </div>
-    <div class="sticky-footer-spacer" aria-hidden="true"></div>
-    """
-    st.markdown(footer_html, unsafe_allow_html=True)
-
-    conn.close()
+    st.markdown('<div class="sticky-footer-shell" aria-hidden="true"></div>', unsafe_allow_html=True)
+    st.button(
+        "Previous",
+        key="sticky_nav_prev",
+        use_container_width=True,
+        disabled=selected_index == 0,
+        on_click=_step_selected_index,
+        args=(index_state_key, slider_state_key, symbols, -1),
+    )
+    st.button(
+        "Next",
+        key="sticky_nav_next",
+        use_container_width=True,
+        disabled=selected_index == len(symbols) - 1,
+        on_click=_step_selected_index,
+        args=(index_state_key, slider_state_key, symbols, 1),
+    )
 
 
 if __name__ == "__main__":
