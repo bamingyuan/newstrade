@@ -9,3 +9,4 @@ tests/
 .pytest_cache/
 **/*.db
 *.egg-info/
+.playwright*
