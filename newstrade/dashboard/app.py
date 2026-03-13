@@ -20,7 +20,7 @@ st.markdown(
     .block-container {
         max-width: 720px;
         padding-top: 1.25rem;
-        padding-bottom: 2rem;
+        padding-bottom: 7rem;
     }
     .app-shell {
         display: flex;
@@ -107,12 +107,60 @@ st.markdown(
         color: #667085;
         font-size: 0.9rem;
         text-align: center;
-        margin-top: -0.25rem;
+        margin-top: 0.15rem;
+        margin-bottom: 0.85rem;
+    }
+    .sticky-footer-nav {
+        position: fixed;
+        left: 50%;
+        bottom: 0.75rem;
+        transform: translateX(-50%);
+        width: min(720px, calc(100vw - 1.7rem));
+        z-index: 20;
+        padding: 0.7rem;
+        border: 1px solid rgba(215, 223, 235, 0.95);
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.94);
+        box-shadow: 0 10px 28px rgba(15, 23, 42, 0.12);
+        backdrop-filter: blur(10px);
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 0.75rem;
+    }
+    .sticky-footer-nav form {
+        margin: 0;
+    }
+    .sticky-footer-nav-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 100%;
+        min-height: 3rem;
+        border-radius: 14px;
+        border: 1px solid #d0d5dd;
+        background: #ffffff;
+        color: #101828;
+        text-decoration: none;
+        font-weight: 600;
+    }
+    .sticky-footer-nav-button:hover {
+        border-color: #98a2b3;
+        background: #f8fafc;
+    }
+    .sticky-footer-nav-button.is-disabled {
+        color: #98a2b3;
+        background: #f9fafb;
+        pointer-events: none;
+        cursor: default;
+    }
+    .sticky-footer-spacer {
+        min-height: 3rem;
     }
     @media (max-width: 640px) {
         .block-container {
             padding-left: 0.85rem;
             padding-right: 0.85rem;
+            padding-bottom: 7.5rem;
         }
         .symbol-card,
         .article-card {
@@ -204,6 +252,28 @@ def _pct_change_style(value: object, max_abs_change: float) -> tuple[str, str, s
     return "#f5f7fa", "#d0d5dd", "#344054"
 
 
+def _get_query_param_int(name: str) -> int | None:
+    raw = st.query_params.get(name)
+    if raw is None or raw == "":
+        return None
+    if isinstance(raw, list):
+        raw = raw[0] if raw else None
+    if raw is None:
+        return None
+    try:
+        return int(str(raw))
+    except (TypeError, ValueError):
+        return None
+
+
+def _clamp_index(value: int | None, size: int) -> int:
+    if size <= 0:
+        return 0
+    if value is None:
+        return 0
+    return max(0, min(value, size - 1))
+
+
 def _render_symbol_card(row: pd.Series, max_abs_change: float) -> None:
     pct_background, pct_border, pct_text = _pct_change_style(row.get("pct_change_1d"), max_abs_change)
     reason_tags = str(row.get("top_reason_tags") or "").strip() or "n/a"
@@ -291,7 +361,9 @@ def main() -> None:
         conn.close()
         return
 
-    selected_run = st.selectbox("Run", run_ids)
+    query_run = _get_query_param_int("run")
+    initial_run = query_run if query_run in run_ids else run_ids[0]
+    selected_run = st.selectbox("Run", run_ids, index=run_ids.index(initial_run))
 
     df = build_report_dataframe(conn, selected_run)
     if df.empty:
@@ -311,47 +383,28 @@ def main() -> None:
     )
 
     symbols = filtered["symbol"].astype(str).tolist()
-    index_state_key = f"selected_symbol_index_{selected_run}"
-    slider_state_key = f"selected_symbol_slider_{selected_run}"
-
-    current_index = st.session_state.get(index_state_key, 0)
-    current_slider_symbol = st.session_state.get(slider_state_key)
-    if current_slider_symbol in symbols:
-        current_index = symbols.index(current_slider_symbol)
-    if not isinstance(current_index, int) or current_index < 0 or current_index >= len(symbols):
-        current_index = 0
-    st.session_state[index_state_key] = current_index
-
-    slider_slot = st.container()
-
-    nav_left, nav_mid, nav_right = st.columns([1, 2, 1])
-    with nav_left:
-        if st.button("Previous", use_container_width=True, disabled=current_index == 0):
-            current_index -= 1
-            st.session_state[index_state_key] = current_index
-    with nav_mid:
-        st.markdown(
-            f'<div class="nav-caption">Symbol {current_index + 1} of {len(symbols)}</div>',
-            unsafe_allow_html=True,
-        )
-    with nav_right:
-        if st.button("Next", use_container_width=True, disabled=current_index == len(symbols) - 1):
-            current_index += 1
-            st.session_state[index_state_key] = current_index
+    query_symbol_index = _get_query_param_int("symbol_index")
+    selected_index = _clamp_index(query_symbol_index, len(symbols))
 
     if len(symbols) == 1:
         selected_symbol = symbols[0]
         selected_index = 0
-        slider_slot.caption("Browse symbols")
-        slider_slot.markdown(
+        st.caption("Browse symbols")
+        st.markdown(
             f'<div class="nav-caption">Only symbol in this run: {html.escape(selected_symbol)}</div>',
             unsafe_allow_html=True,
         )
     else:
-        st.session_state[slider_state_key] = symbols[current_index]
-        selected_symbol = slider_slot.select_slider("Browse symbols", options=symbols, key=slider_state_key)
+        selected_symbol = st.select_slider("Browse symbols", options=symbols, value=symbols[selected_index])
         selected_index = symbols.index(selected_symbol)
-        st.session_state[index_state_key] = selected_index
+        st.markdown(
+            f'<div class="nav-caption">Symbol {selected_index + 1} of {len(symbols)}</div>',
+            unsafe_allow_html=True,
+        )
+
+    if query_run != selected_run or query_symbol_index != selected_index:
+        st.query_params["run"] = str(selected_run)
+        st.query_params["symbol_index"] = str(selected_index)
 
     selected_row = filtered.iloc[selected_index]
     max_abs_change = float(pd.to_numeric(filtered["pct_change_1d"], errors="coerce").abs().fillna(0).max())
@@ -359,6 +412,29 @@ def main() -> None:
     _render_symbol_card(selected_row, max_abs_change)
     detail_df = load_symbol_detail(conn, selected_run, selected_symbol)
     _render_articles(detail_df)
+
+    previous_index = max(selected_index - 1, 0)
+    next_index = min(selected_index + 1, len(symbols) - 1)
+    previous_class = "sticky-footer-nav-button is-disabled" if selected_index == 0 else "sticky-footer-nav-button"
+    next_class = "sticky-footer-nav-button is-disabled" if selected_index == len(symbols) - 1 else "sticky-footer-nav-button"
+    previous_disabled = "disabled" if selected_index == 0 else ""
+    next_disabled = "disabled" if selected_index == len(symbols) - 1 else ""
+    footer_html = f"""
+    <div class="sticky-footer-nav" aria-label="Symbol navigation">
+        <form method="get">
+            <input type="hidden" name="run" value="{selected_run}">
+            <input type="hidden" name="symbol_index" value="{previous_index}">
+            <button type="submit" class="{previous_class}" {previous_disabled}>Previous</button>
+        </form>
+        <form method="get">
+            <input type="hidden" name="run" value="{selected_run}">
+            <input type="hidden" name="symbol_index" value="{next_index}">
+            <button type="submit" class="{next_class}" {next_disabled}>Next</button>
+        </form>
+    </div>
+    <div class="sticky-footer-spacer" aria-hidden="true"></div>
+    """
+    st.markdown(footer_html, unsafe_allow_html=True)
 
     conn.close()
 
