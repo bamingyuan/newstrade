@@ -22,6 +22,9 @@ st.markdown(
         padding-top: 1.25rem;
         padding-bottom: 7rem;
     }
+    [data-testid="stAppDeployButton"] {
+        display: none;
+    }
     .app-shell {
         display: flex;
         flex-direction: column;
@@ -332,29 +335,29 @@ def _render_symbol_card(row: pd.Series, max_abs_change: float) -> None:
             <div class="metric-value symbol-value">{html.escape(str(row.get("symbol", "n/a")))}</div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">pct_change_1d</div>
+            <div class="metric-label">Price Change 1d</div>
             <div class="metric-value pct-pill" style="background:{pct_background};border-color:{pct_border};color:{pct_text};">
                 {html.escape(_format_pct(row.get("pct_change_1d")))}
             </div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">weighted_impact_score</div>
+            <div class="metric-label">Weighted Impact Score</div>
             <div class="metric-value">{html.escape(_format_decimal(row.get("weighted_impact_score"), 1))}</div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">weighted_seriousness_score</div>
+            <div class="metric-label">Weighted Seriousness Score</div>
             <div class="metric-value">{html.escape(_format_decimal(row.get("weighted_seriousness_score"), 1))}</div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">avg_relevance_score</div>
+            <div class="metric-label">Average Relevance Score</div>
             <div class="metric-value">{html.escape(_format_decimal(row.get("avg_relevance_score"), 1))}</div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">reason_tags</div>
+            <div class="metric-label">Reason Tags</div>
             <div class="metric-value">{html.escape(reason_tags)}</div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">article_count</div>
+            <div class="metric-label">Article Count</div>
             <div class="metric-value">{html.escape(_format_decimal(row.get("article_count"), 0))}</div>
         </div>
     </div>
@@ -380,7 +383,6 @@ def _render_articles(detail_df: pd.DataFrame) -> None:
 
         article_html = f"""
         <div class="article-card">
-            <div class="card-title">News</div>
             <div class="article-title">{html.escape(str(article.get("title") or "Untitled"))}</div>
             {summary_html}
             <div class="article-row">
@@ -398,7 +400,6 @@ def _render_articles(detail_df: pd.DataFrame) -> None:
 
 def main() -> None:
     st.title("Newstrade")
-    st.caption("Mobile-first view of abnormal movers and the news driving them.")
 
     config = load_config()
     run_ids = load_run_ids_cached(config.db_path)
