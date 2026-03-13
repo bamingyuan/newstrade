@@ -62,6 +62,53 @@ st.markdown(
         font-size: 0.95rem;
         color: #475467;
     }
+    .metric-label-with-help {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.45rem;
+        flex-wrap: wrap;
+    }
+    .metric-help {
+        position: relative;
+        display: inline-block;
+    }
+    .metric-help summary {
+        list-style: none;
+        width: 1.1rem;
+        height: 1.1rem;
+        border-radius: 999px;
+        border: 1px solid #98a2b3;
+        color: #667085;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.72rem;
+        font-weight: 700;
+        cursor: pointer;
+        background: #ffffff;
+    }
+    .metric-help summary::-webkit-details-marker {
+        display: none;
+    }
+    .metric-help[open] summary {
+        border-color: #475467;
+        color: #344054;
+    }
+    .metric-help-box {
+        position: absolute;
+        top: 1.55rem;
+        left: 0;
+        width: min(16rem, 72vw);
+        padding: 0.65rem 0.75rem;
+        border-radius: 12px;
+        border: 1px solid #d0d5dd;
+        background: #ffffff;
+        box-shadow: 0 10px 24px rgba(15, 23, 42, 0.12);
+        color: #344054;
+        font-size: 0.82rem;
+        line-height: 1.45;
+        z-index: 5;
+    }
     .metric-value {
         font-size: 1rem;
         font-weight: 700;
@@ -323,9 +370,35 @@ def _step_selected_index(index_state_key: str, slider_state_key: str, symbols: l
     st.session_state[slider_state_key] = symbols[next_index]
 
 
+def _metric_label_with_help(label: str, help_text: str) -> str:
+    safe_label = html.escape(label)
+    safe_help_text = html.escape(help_text)
+    return (
+        '<span class="metric-label-with-help">'
+        f"{safe_label}"
+        '<details class="metric-help">'
+        f'<summary aria-label="About {safe_label}">i</summary>'
+        f'<div class="metric-help-box">{safe_help_text}</div>'
+        "</details>"
+        "</span>"
+    )
+
+
 def _render_symbol_card(row: pd.Series, max_abs_change: float) -> None:
     pct_background, pct_border, pct_text = _pct_change_style(row.get("pct_change_1d"), max_abs_change)
     reason_tags = str(row.get("top_reason_tags") or "").strip() or "n/a"
+    impact_label = _metric_label_with_help(
+        "Weighted Impact Score",
+        "A weighted view of how strong the expected market effect is across this symbol's news.",
+    )
+    seriousness_label = _metric_label_with_help(
+        "Weighted Seriousness Score",
+        "A weighted view of how important and material the recent news appears to be.",
+    )
+    relevance_label = _metric_label_with_help(
+        "Average Relevance Score",
+        "The average score for how directly the recent articles relate to this symbol.",
+    )
 
     card_html = f"""
     <div class="symbol-card">
@@ -341,15 +414,15 @@ def _render_symbol_card(row: pd.Series, max_abs_change: float) -> None:
             </div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">Weighted Impact Score</div>
+            <div class="metric-label">{impact_label}</div>
             <div class="metric-value">{html.escape(_format_decimal(row.get("weighted_impact_score"), 1))}</div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">Weighted Seriousness Score</div>
+            <div class="metric-label">{seriousness_label}</div>
             <div class="metric-value">{html.escape(_format_decimal(row.get("weighted_seriousness_score"), 1))}</div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">Average Relevance Score</div>
+            <div class="metric-label">{relevance_label}</div>
             <div class="metric-value">{html.escape(_format_decimal(row.get("avg_relevance_score"), 1))}</div>
         </div>
         <div class="metric-row">
