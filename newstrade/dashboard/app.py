@@ -138,9 +138,21 @@ st.markdown(
     }
     .article-meta {
         margin-bottom: 0.75rem;
-        color: #475467;
-        font-size: 0.9rem;
-        line-height: 1.45;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+    }
+    .article-score-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 0.32rem 0.6rem;
+        border-radius: 999px;
+        border: 1px solid #d0d5dd;
+        background: #f2f4f7;
+        color: #344054;
+        font-size: 0.84rem;
+        font-weight: 600;
+        line-height: 1.2;
     }
     .article-summary {
         margin-bottom: 0.8rem;
@@ -346,11 +358,35 @@ def _format_timestamp(value: object) -> str:
     return dt_value.strftime("%Y-%m-%d %H:%M")
 
 
-def _format_integer(value: object) -> str:
+def _score_pill(label: str, value: object, max_value: float = 100.0) -> str:
     numeric = _coerce_float(value)
     if numeric is None:
-        return "n/a"
-    return str(int(round(numeric)))
+        background = "#f2f4f7"
+        border = "#d0d5dd"
+        color = "#344054"
+        rendered_value = "n/a"
+    else:
+        normalized = max(0.0, min(numeric, max_value))
+        rendered_value = str(int(round(normalized)))
+        if normalized < 34:
+            background = "#f2f4f7"
+            border = "#d0d5dd"
+            color = "#344054"
+        elif normalized < 67:
+            background = "#ffedd5"
+            border = "#fb923c"
+            color = "#9a3412"
+        else:
+            background = "#dcfce7"
+            border = "#4ade80"
+            color = "#166534"
+
+    return (
+        '<span class="article-score-pill" '
+        f'style="background:{background};border-color:{border};color:{color};">'
+        f"{html.escape(label)}: {html.escape(rendered_value)}"
+        "</span>"
+    )
 
 
 def _pct_change_style(value: object, max_abs_change: float) -> tuple[str, str, str]:
@@ -424,7 +460,7 @@ def _render_symbol_card(row: pd.Series, max_abs_change: float) -> None:
             <div class="metric-value symbol-value">{html.escape(str(row.get("symbol", "n/a")))}</div>
         </div>
         <div class="metric-row">
-            <div class="metric-label">Price Change 1d</div>
+            <div class="metric-label">Change 1d</div>
             <div class="metric-value pct-pill" style="background:{pct_background};border-color:{pct_border};color:{pct_text};">
                 {html.escape(_format_pct(row.get("pct_change_1d")))}
             </div>
@@ -462,9 +498,9 @@ def _render_articles(detail_df: pd.DataFrame) -> None:
     for _, article in detail_df.iterrows():
         url = str(article.get("url") or "").strip()
         summary = str(article.get("summary") or "").strip()
-        relevance = _format_integer(article.get("relevance_score"))
-        seriousness = _format_integer(article.get("seriousness_score"))
-        confidence = _format_integer(article.get("confidence"))
+        relevance_raw = article.get("relevance_score")
+        seriousness_raw = article.get("seriousness_score")
+        confidence_raw = article.get("confidence")
         safe_url = html.escape(url, quote=True)
         link_html = (
             f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_url}</a>'
@@ -474,9 +510,9 @@ def _render_articles(detail_df: pd.DataFrame) -> None:
         summary_html = f'<div class="article-summary">{html.escape(summary)}</div>' if summary else ""
         meta_html = (
             f'<div class="article-meta">'
-            f'Relevance: {html.escape(relevance)} | '
-            f'Seriousness: {html.escape(seriousness)} | '
-            f'Confidence: {html.escape(confidence)}'
+            f'{_score_pill("Relevance", relevance_raw)}'
+            f'{_score_pill("Seriousness", seriousness_raw)}'
+            f'{_score_pill("Confidence", confidence_raw)}'
             f"</div>"
         )
 
