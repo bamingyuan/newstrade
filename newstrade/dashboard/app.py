@@ -86,6 +86,11 @@ st.markdown(
         margin-bottom: 0.8rem;
         line-height: 1.4;
     }
+    .article-summary {
+        margin-bottom: 0.8rem;
+        color: #344054;
+        line-height: 1.55;
+    }
     .article-row {
         margin-top: 0.55rem;
         color: #475467;
@@ -228,12 +233,15 @@ def load_symbol_detail_cached(db_path: str, scan_run_id: int, symbol: str) -> pd
 def load_symbol_detail(conn: sqlite3.Connection, scan_run_id: int, symbol: str) -> pd.DataFrame:
     sql = """
         SELECT
-            published_ts_utc,
-            title,
-            url
-        FROM news_articles
-        WHERE scan_run_id = ? AND symbol = ?
-        ORDER BY published_ts_utc DESC, article_id DESC
+            n.published_ts_utc,
+            n.title,
+            n.url,
+            COALESCE(a.summary, n.summary) AS summary
+        FROM news_articles n
+        LEFT JOIN article_scores a
+          ON a.article_id = n.article_id
+        WHERE n.scan_run_id = ? AND n.symbol = ?
+        ORDER BY n.published_ts_utc DESC, n.article_id DESC
     """
     return pd.read_sql_query(sql, conn, params=(scan_run_id, symbol))
 
@@ -361,17 +369,20 @@ def _render_articles(detail_df: pd.DataFrame) -> None:
 
     for _, article in detail_df.iterrows():
         url = str(article.get("url") or "").strip()
+        summary = str(article.get("summary") or "").strip()
         safe_url = html.escape(url, quote=True)
         link_html = (
             f'<a href="{safe_url}" target="_blank" rel="noopener noreferrer">{safe_url}</a>'
             if safe_url
             else "n/a"
         )
+        summary_html = f'<div class="article-summary">{html.escape(summary)}</div>' if summary else ""
 
         article_html = f"""
         <div class="article-card">
             <div class="card-title">News</div>
             <div class="article-title">{html.escape(str(article.get("title") or "Untitled"))}</div>
+            {summary_html}
             <div class="article-row">
                 <span class="article-label">Published:</span>
                 {html.escape(_format_timestamp(article.get("published_ts_utc")))}
