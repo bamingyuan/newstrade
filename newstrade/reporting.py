@@ -60,7 +60,7 @@ def build_report_dataframe(conn: sqlite3.Connection, scan_run_id: int) -> pd.Dat
 
 def report_to_console(df: pd.DataFrame, top: int = 30) -> str:
     if df.empty:
-        return "No symbol scores found for this run."
+        return "No scored symbols found for this run. Either scoring has not run yet or no articles were collected."
 
     ordered = df.sort_values(
         by=["weighted_seriousness_score", "weighted_impact_score"],

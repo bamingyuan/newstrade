@@ -15,6 +15,7 @@ from .config import AppConfig
 from .db import (
     connect_db,
     create_scan_run,
+    delete_symbol_score,
     get_symbols_for_run,
     get_unscored_articles,
     init_db,
@@ -584,13 +585,17 @@ def run_score(
             )
 
     symbols = get_symbols_for_run(conn, scan_run_id, passed_only=True)
+    symbol_score_count = 0
     for symbol_row in symbols:
         symbol = str(symbol_row["symbol"])
         scored_rows = [dict(row) for row in get_scored_articles_for_symbol(conn, scan_run_id, symbol)]
+        if not scored_rows:
+            delete_symbol_score(conn, scan_run_id, symbol)
+            continue
         aggregate = compute_symbol_aggregate(symbol=symbol, scan_run_id=scan_run_id, rows=scored_rows)
         upsert_symbol_score(conn, aggregate)
+        symbol_score_count += 1
 
-    symbol_score_count = len(symbols)
     conn.close()
     return scored_count, symbol_score_count
 

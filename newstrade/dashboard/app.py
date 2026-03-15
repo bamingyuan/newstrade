@@ -547,7 +547,7 @@ def main() -> None:
 
     df = load_report_dataframe_cached(config.db_path, selected_run)
     if df.empty:
-        st.warning("No symbol scores for this run yet. Execute CLI `score` command.")
+        st.warning("No scored symbols found for this run. Run `news` and `score`, or check whether any articles were collected.")
         return
 
     pct_change_numeric = pd.to_numeric(df["pct_change_1d"], errors="coerce")

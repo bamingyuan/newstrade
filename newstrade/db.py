@@ -343,6 +343,14 @@ def upsert_symbol_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     conn.commit()
 
 
+def delete_symbol_score(conn: sqlite3.Connection, scan_run_id: int, symbol: str) -> None:
+    conn.execute(
+        "DELETE FROM symbol_scores WHERE scan_run_id = ? AND symbol = ?",
+        (scan_run_id, symbol),
+    )
+    conn.commit()
+
+
 def get_scan_run(conn: sqlite3.Connection, scan_run_id: int) -> sqlite3.Row | None:
     return conn.execute("SELECT * FROM scan_runs WHERE scan_run_id = ?", (scan_run_id,)).fetchone()
 
