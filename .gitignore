@@ -10,3 +10,5 @@ tests/
 **/*.db
 *.egg-info/
 .playwright*
+.venv/
+.streamlit/
