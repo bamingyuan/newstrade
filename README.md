@@ -1,36 +1,70 @@
-# Newstrade v1
+# Newstrade
 
-Newstrade is a beginner-friendly Python app that answers:
+Newstrade is a Python app for investigating unusual stock moves.
 
-- Which stocks moved abnormally today?
-- What likely caused it?
-- How serious is the news?
+It scans US stocks with IBKR market data, collects recent news from Yahoo Finance RSS and optionally Massive (Polygon), scores each article with OpenAI, stores the results in SQLite, and lets you review the run in the CLI or a small Streamlit dashboard.
 
-It uses:
+## What It Does
 
-- IBKR for price movement scanning
-- Yahoo Finance RSS + Massive (Polygon) for symbol news
-- OpenAI for structured sentiment/severity scoring
-- SQLite for storage
-- Streamlit for a mobile-friendly dashboard
+- finds symbols that moved enough to be interesting
+- collects recent news for those symbols
+- scores each article for impact, seriousness, confidence, and relevance
+- aggregates article scores into symbol-level rankings
+- exports results to CSV and shows them in a read-only dashboard
 
-## 1) Setup
+## Setup
+
+Requirements:
+
+- Python 3.10+
+- IB Gateway or TWS running locally for the scan step
+- an OpenAI API key for the `score` step
+- optionally, a Massive API key if you want a second news source
+
+After cloning the repository:
 
 ```bash
 python -m venv .venv
-.venv\Scripts\activate
-pip install -e ".[dev]"
 ```
 
-Copy `.env.example` to `.env` and set your values:
+Activate the virtual environment:
+
+```bash
+# Windows
+.venv\Scripts\activate
+
+# macOS / Linux
+source .venv/bin/activate
+```
+
+Install the app with `pip`:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install .
+```
+
+If you also want the test dependency:
+
+```bash
+python -m pip install ".[dev]"
+```
+
+Create your local config file:
 
 ```bash
 copy .env.example .env
 ```
 
-## 2) CLI workflow
+On macOS or Linux:
 
-Run one stage at a time:
+```bash
+cp .env.example .env
+```
+
+## CLI Workflow
+
+The pipeline is designed as separate stages:
 
 ```bash
 newstrade scan --window 1d --mode both
@@ -40,69 +74,70 @@ newstrade report --top 30
 newstrade export --format csv
 ```
 
-`news`, `score`, `report`, and `export` automatically use the latest `scan_run_id` when `--scan-run-id` is omitted.
+What each command does:
 
-Or run the whole pipeline:
+- `scan` resolves symbols and stores price snapshots
+- `news` fetches recent articles for the passed symbols
+- `score` sends articles to OpenAI and stores structured scores
+- `report` prints the ranked symbol summary in the terminal
+- `export` writes a CSV report to `CSV_EXPORT_DIR`
+
+`news`, `score`, `report`, and `export` automatically use the latest `scan_run_id` if you do not pass `--scan-run-id`.
+
+You can also run the whole pipeline in one command:
 
 ```bash
 newstrade run-all --window 1d --mode both --top 30
 ```
 
-## 3) Dashboard
+Useful scan options:
+
+- `--window 1d` uses daily percentage change
+- `--window intraday` uses intraday percentage change
+- `--mode env` uses only the symbols from `.env`
+- `--mode ibkr` uses only the IBKR scanner
+- `--mode both` combines `.env` symbols and IBKR scanner results
+
+## Dashboard
+
+Start the Streamlit dashboard with:
 
 ```bash
 python -m streamlit run newstrade/dashboard/app.py
 ```
 
-The dashboard is read-only and shows:
+The dashboard is read-only and lets you browse recent runs, symbol-level scores, and article details.
 
-- ranked symbols by seriousness
-- impact and seriousness charts
-- article-level details and AI summaries
-- filtered CSV download
+## Important `.env` Settings
 
-## 4) Database tables
+You do not need to tweak every variable. These are the ones to understand first:
 
-- `scan_runs`
-- `symbols_snapshot`
-- `news_articles`
-- `article_scores`
-- `symbol_scores`
-- `exports_log`
+- `SYMBOL_MODE` chooses whether symbols come from `.env`, IBKR, or both.
+- `SYMBOLS` is the comma-separated fallback/watchlist used when `SYMBOL_MODE` includes `env`.
+- `OPENAI_API_KEY` is required for `newstrade score`.
+- `OPENAI_MODEL` controls which model scores the articles.
+- `IBKR_HOST`, `IBKR_PORT`, and `IBKR_CLIENT_ID` control the connection to IB Gateway or TWS.
+- `DB_PATH` is the SQLite database path.
+- `CSV_EXPORT_DIR` is where CSV exports are written.
 
-## 5) Notes
+Helpful optional settings:
 
-- Timestamps are stored in UTC.
-- If OpenAI fails for an article, the pipeline stores a fallback neutral score and continues.
-- Impact contract is deterministic: `impact_direction` is one of `bearish|neutral|bullish`, and stored `impact_score` is normalized to match direction (`bearish<0`, `neutral=0`, `bullish>0`) on a `-100..100` scale.
-- Magnitude guide used in scoring prompt: `1-20 mild`, `21-50 moderate`, `51-80 strong`, `81-100 extreme`.
-- `newstrade score ...` now prints per-article token usage (`prompt`, `completion`, `total`, `reasoning`) for hotspot analysis.
-- Tune OpenAI output/cost behavior with `.env`: `OPENAI_MAX_COMPLETION_TOKENS` and `OPENAI_SCORE_RETRIES`.
-- For reasoning-heavy models (for example `gpt-5-mini`), `OPENAI_MAX_COMPLETION_TOKENS` also covers reasoning tokens. If set too low, the model may return empty content.
-- Set `SCAN_TIME_TRAVEL=1` and `SCAN_AS_OF_DATE=YYYY-MM-DD` to test scans/news against a past date (interpreted as US close, 16:00 `America/New_York`).
-- When time travel is enabled, scan mode must be `env` (`newstrade scan --mode env ...`), otherwise the scan fails with a clear message.
-- `newstrade news` merges Yahoo RSS and Massive results when `MASSIVE_API_KEY` is set, and deduplicates by canonical article URL.
-- Set `YAHOO_RSS_ALLOWED_DOMAINS=finance.yahoo.com,fool.com` to allow only those Yahoo RSS article domains (subdomains match, empty means allow all).
-- Set `MASSIVE_NEWS=0` to disable Massive API calls entirely, even if `MASSIVE_API_KEY` is present.
-- Massive is optional; if `MASSIVE_API_KEY` is empty, the pipeline uses Yahoo only.
-- For Massive free-tier usage, keep `MASSIVE_MAX_CALLS_PER_MINUTE=5`.
-- For 2-week historical backfill, set `NEWS_LOOKBACK_HOURS=336`.
-- `symbols_snapshot.price_source_ts_utc` records when price data was fetched; `symbols_snapshot.price_as_of_ts_utc` records the market as-of timestamp used for that snapshot.
-- `news_articles.summary` stores provider summaries when available (for example Massive `description`), and is included in AI scoring context.
-- AI scoring now includes per-article symbol relevance: `main_symbol`, `mentioned_symbols_json`, and `relevance_score` (`0..100`). Relevance is penalized when the detected main symbol differs from the expected symbol, and when multiple symbols are discussed.
-- On weekends/holidays, scan continues and may use the previous trading session for some symbols. A warning is added to the run notes.
-- `MIN_PRICE` / `MAX_PRICE` are sent to the IBKR scanner and still validated locally after snapshot fetch.
-- `MIN_VOLUME` is sent to the scanner as `aboveVolume` and still validated locally from latest IBKR daily `TRADES` volume.
-- `MAX_VOLUME` is local-only (IBKR scanner has no max-volume bound).
-- `MIN_MARKET_CAP` / `MAX_MARKET_CAP` are scanner-only bounds when `MARKET_CAP=1`.
-- Set `IBKR_MAX_SYMBOLS` to control how many scanner rows are requested per scan code (`TOP_PERC_GAIN` and `TOP_PERC_LOSE`) before de-duplication.
-- `IBKR_STOCK_TYPE_FILTER` applies IBKR scanner `stockTypeFilter`. Valid values are `CORP`, `ADR`, `ETF`, `REIT`, `CEF`; empty disables it.
-- Set `MARKET_CAP=0` in `.env` to disable market-cap scanner bounds.
-- Market-cap bounds are not applied to pure env symbols (`--mode env` or `SYMBOL_MODE=env`; and env-added symbols in `both`).
-- `symbols_snapshot.market_cap` stays empty in scan-stage snapshots.
-- Set `LOG_LEVEL=DEBUG` to print transparent IBKR scan logs (connect params, scanner request args, historical-data request args, bar counts, and per-symbol filter outcomes).
+- `MASSIVE_API_KEY` enables Massive news in addition to Yahoo RSS.
+- `MASSIVE_NEWS=0` disables Massive completely, even if a key is present.
+- `YAHOO_RSS_ALLOWED_DOMAINS` limits accepted Yahoo RSS article domains.
+- `MIN_PCT_CHANGE`, `MIN_PRICE`, `MAX_PRICE`, `MIN_VOLUME`, and market-cap settings control scan filters.
+- `SCAN_TIME_TRAVEL=1` with `SCAN_AS_OF_DATE=YYYY-MM-DD` lets you replay a past date. Time travel only works with `--mode env` or `SYMBOL_MODE=env`.
 
-## 6) Tests
+A few practical notes:
+
+- leaving optional numeric filters empty disables them
+- if `MASSIVE_API_KEY` is empty, the app uses Yahoo RSS only
+- timestamps are stored in UTC
+- the app writes local data to `./data` and exports to `./exports` by default
+
+## Tests
+
+Run the test suite with:
 
 ```bash
 pytest -q
