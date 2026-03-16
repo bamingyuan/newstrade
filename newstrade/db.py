@@ -5,6 +5,9 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
+DB_SCHEMA_VERSION = 2
+
+
 def connect_db(db_path: str) -> sqlite3.Connection:
     path = Path(db_path)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -13,46 +16,43 @@ def connect_db(db_path: str) -> sqlite3.Connection:
     return conn
 
 
-def _ensure_column(conn: sqlite3.Connection, table: str, column: str, ddl_type: str) -> None:
-    rows = conn.execute(f"PRAGMA table_info({table})").fetchall()
-    existing_columns = {
-        str(row["name"]) if isinstance(row, sqlite3.Row) else str(row[1])
-        for row in rows
-    }
-    if column in existing_columns:
-        return
-    conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl_type}")
-
-
 def init_db(conn: sqlite3.Connection) -> None:
+    conn.execute("PRAGMA foreign_keys = ON")
+    if _needs_schema_reset(conn):
+        _drop_all_tables(conn)
+
     conn.executescript(
         """
-        PRAGMA foreign_keys = ON;
-
         CREATE TABLE IF NOT EXISTS scan_runs (
             scan_run_id INTEGER PRIMARY KEY AUTOINCREMENT,
             run_ts_utc TEXT NOT NULL,
-            scan_window TEXT NOT NULL,
-            symbol_mode TEXT NOT NULL,
-            min_pct_change REAL NOT NULL,
-            max_pct_change REAL NOT NULL,
+            trade_date TEXT,
+            previous_trade_date TEXT,
             status TEXT NOT NULL,
-            notes TEXT
+            notes TEXT,
+            total_candidates INTEGER NOT NULL DEFAULT 0,
+            passed_candidates INTEGER NOT NULL DEFAULT 0,
+            selected_candidates INTEGER NOT NULL DEFAULT 0
         );
 
         CREATE TABLE IF NOT EXISTS symbols_snapshot (
             snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT,
             scan_run_id INTEGER NOT NULL,
             symbol TEXT NOT NULL,
-            last_price REAL,
-            pct_change_1d REAL,
-            pct_change_intraday REAL,
+            trade_date TEXT,
+            previous_trade_date TEXT,
+            close_price REAL,
+            previous_close_price REAL,
+            pct_change REAL,
             volume REAL,
-            market_cap REAL,
-            price_source_ts_utc TEXT NOT NULL,
+            vwap REAL,
+            transaction_count INTEGER,
             price_as_of_ts_utc TEXT NOT NULL,
             passed_filters INTEGER NOT NULL,
-            FOREIGN KEY(scan_run_id) REFERENCES scan_runs(scan_run_id)
+            rank_abs_pct_change INTEGER,
+            selected_for_news INTEGER NOT NULL DEFAULT 0,
+            FOREIGN KEY(scan_run_id) REFERENCES scan_runs(scan_run_id),
+            UNIQUE(scan_run_id, symbol)
         );
 
         CREATE TABLE IF NOT EXISTS news_articles (
@@ -63,7 +63,7 @@ def init_db(conn: sqlite3.Connection) -> None:
             title TEXT NOT NULL,
             source TEXT NOT NULL,
             published_ts_utc TEXT,
-            rss_fetched_ts_utc TEXT NOT NULL,
+            fetched_ts_utc TEXT NOT NULL,
             dedup_key TEXT NOT NULL,
             summary TEXT,
             provider TEXT NOT NULL DEFAULT 'yahoo_rss',
@@ -123,50 +123,80 @@ def init_db(conn: sqlite3.Connection) -> None:
         );
         """
     )
-
-    _ensure_column(conn, "article_scores", "prompt_tokens", "INTEGER")
-    _ensure_column(conn, "article_scores", "completion_tokens", "INTEGER")
-    _ensure_column(conn, "article_scores", "total_tokens", "INTEGER")
-    _ensure_column(conn, "article_scores", "reasoning_tokens", "INTEGER")
-    _ensure_column(conn, "article_scores", "impact_direction", "TEXT NOT NULL DEFAULT 'neutral'")
-    _ensure_column(conn, "article_scores", "main_symbol", "TEXT")
-    _ensure_column(conn, "article_scores", "mentioned_symbols_json", "TEXT NOT NULL DEFAULT '[]'")
-    _ensure_column(conn, "article_scores", "relevance_score", "INTEGER NOT NULL DEFAULT 0")
-    _ensure_column(conn, "symbols_snapshot", "price_as_of_ts_utc", "TEXT NOT NULL DEFAULT ''")
-    _ensure_column(conn, "symbols_snapshot", "volume", "REAL")
-    _ensure_column(conn, "news_articles", "summary", "TEXT")
-    _ensure_column(conn, "news_articles", "provider", "TEXT NOT NULL DEFAULT 'yahoo_rss'")
-    _ensure_column(conn, "news_articles", "provider_article_id", "TEXT")
-
+    conn.execute(f"PRAGMA user_version = {DB_SCHEMA_VERSION}")
     conn.commit()
 
 
 def create_scan_run(
     conn: sqlite3.Connection,
     run_ts_utc: str,
-    scan_window: str,
-    symbol_mode: str,
-    min_pct_change: float,
-    max_pct_change: float,
     status: str,
     notes: str = "",
+    trade_date: str | None = None,
+    previous_trade_date: str | None = None,
+    total_candidates: int = 0,
+    passed_candidates: int = 0,
+    selected_candidates: int = 0,
+    **_: Any,
 ) -> int:
     cursor = conn.execute(
         """
         INSERT INTO scan_runs (
-            run_ts_utc, scan_window, symbol_mode, min_pct_change, max_pct_change, status, notes
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            run_ts_utc, trade_date, previous_trade_date, status, notes,
+            total_candidates, passed_candidates, selected_candidates
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
-        (run_ts_utc, scan_window, symbol_mode, min_pct_change, max_pct_change, status, notes),
+        (
+            run_ts_utc,
+            trade_date,
+            previous_trade_date,
+            status,
+            notes,
+            total_candidates,
+            passed_candidates,
+            selected_candidates,
+        ),
     )
     conn.commit()
     return int(cursor.lastrowid)
 
 
-def update_scan_run_status(conn: sqlite3.Connection, scan_run_id: int, status: str, notes: str = "") -> None:
+def update_scan_run_status(
+    conn: sqlite3.Connection,
+    scan_run_id: int,
+    status: str,
+    notes: str = "",
+    trade_date: str | None = None,
+    previous_trade_date: str | None = None,
+    total_candidates: int | None = None,
+    passed_candidates: int | None = None,
+    selected_candidates: int | None = None,
+) -> None:
+    existing = get_scan_run(conn, scan_run_id)
+    if existing is None:
+        return
     conn.execute(
-        "UPDATE scan_runs SET status = ?, notes = ? WHERE scan_run_id = ?",
-        (status, notes, scan_run_id),
+        """
+        UPDATE scan_runs
+        SET status = ?,
+            notes = ?,
+            trade_date = ?,
+            previous_trade_date = ?,
+            total_candidates = ?,
+            passed_candidates = ?,
+            selected_candidates = ?
+        WHERE scan_run_id = ?
+        """,
+        (
+            status,
+            notes,
+            trade_date if trade_date is not None else existing["trade_date"],
+            previous_trade_date if previous_trade_date is not None else existing["previous_trade_date"],
+            total_candidates if total_candidates is not None else existing["total_candidates"],
+            passed_candidates if passed_candidates is not None else existing["passed_candidates"],
+            selected_candidates if selected_candidates is not None else existing["selected_candidates"],
+            scan_run_id,
+        ),
     )
     conn.commit()
 
@@ -175,22 +205,41 @@ def insert_symbol_snapshots(conn: sqlite3.Connection, rows: Iterable[dict[str, A
     conn.executemany(
         """
         INSERT INTO symbols_snapshot (
-            scan_run_id, symbol, last_price, pct_change_1d, pct_change_intraday, volume, market_cap,
-            price_source_ts_utc, price_as_of_ts_utc, passed_filters
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            scan_run_id, symbol, trade_date, previous_trade_date, close_price, previous_close_price,
+            pct_change, volume, vwap, transaction_count, price_as_of_ts_utc, passed_filters,
+            rank_abs_pct_change, selected_for_news
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(scan_run_id, symbol)
+        DO UPDATE SET
+            trade_date = excluded.trade_date,
+            previous_trade_date = excluded.previous_trade_date,
+            close_price = excluded.close_price,
+            previous_close_price = excluded.previous_close_price,
+            pct_change = excluded.pct_change,
+            volume = excluded.volume,
+            vwap = excluded.vwap,
+            transaction_count = excluded.transaction_count,
+            price_as_of_ts_utc = excluded.price_as_of_ts_utc,
+            passed_filters = excluded.passed_filters,
+            rank_abs_pct_change = excluded.rank_abs_pct_change,
+            selected_for_news = excluded.selected_for_news
         """,
         [
             (
                 row["scan_run_id"],
                 row["symbol"],
-                row.get("last_price"),
-                row.get("pct_change_1d"),
-                row.get("pct_change_intraday"),
+                row.get("trade_date"),
+                row.get("previous_trade_date"),
+                _pick_value(row, "close_price", "last_price"),
+                row.get("previous_close_price"),
+                _pick_value(row, "pct_change", "pct_change_1d"),
                 row.get("volume"),
-                row.get("market_cap"),
-                row["price_source_ts_utc"],
-                row["price_as_of_ts_utc"],
+                row.get("vwap"),
+                row.get("transaction_count"),
+                row.get("price_as_of_ts_utc", ""),
                 int(bool(row.get("passed_filters", False))),
+                row.get("rank_abs_pct_change"),
+                int(bool(row.get("selected_for_news", row.get("passed_filters", False)))),
             )
             for row in rows
         ],
@@ -198,12 +247,20 @@ def insert_symbol_snapshots(conn: sqlite3.Connection, rows: Iterable[dict[str, A
     conn.commit()
 
 
-def get_symbols_for_run(conn: sqlite3.Connection, scan_run_id: int, passed_only: bool = True) -> list[sqlite3.Row]:
+def get_symbols_for_run(
+    conn: sqlite3.Connection,
+    scan_run_id: int,
+    selected_only: bool = True,
+    passed_only: bool | None = None,
+) -> list[sqlite3.Row]:
+    if passed_only is not None:
+        selected_only = passed_only
+
     sql = "SELECT * FROM symbols_snapshot WHERE scan_run_id = ?"
     params: list[Any] = [scan_run_id]
-    if passed_only:
-        sql += " AND passed_filters = 1"
-    sql += " ORDER BY symbol"
+    if selected_only:
+        sql += " AND selected_for_news = 1"
+    sql += " ORDER BY COALESCE(rank_abs_pct_change, 999999), symbol"
     return list(conn.execute(sql, params).fetchall())
 
 
@@ -218,11 +275,12 @@ def list_existing_article_dedup_keys(conn: sqlite3.Connection, scan_run_id: int,
 def insert_news_articles(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]]) -> int:
     inserted = 0
     for row in rows:
+        fetched_ts_utc = row.get("fetched_ts_utc", row.get("rss_fetched_ts_utc"))
         try:
             conn.execute(
                 """
                 INSERT INTO news_articles (
-                    scan_run_id, symbol, url, title, source, published_ts_utc, rss_fetched_ts_utc, dedup_key,
+                    scan_run_id, symbol, url, title, source, published_ts_utc, fetched_ts_utc, dedup_key,
                     summary, provider, provider_article_id
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
@@ -233,7 +291,7 @@ def insert_news_articles(conn: sqlite3.Connection, rows: Iterable[dict[str, Any]
                     row["title"],
                     row["source"],
                     row.get("published_ts_utc"),
-                    row["rss_fetched_ts_utc"],
+                    fetched_ts_utc,
                     row["dedup_key"],
                     row.get("summary"),
                     row.get("provider", "yahoo_rss"),
@@ -269,8 +327,8 @@ def insert_article_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
         INSERT OR REPLACE INTO article_scores (
             scan_run_id, symbol, article_id, openai_model, summary, impact_score, impact_direction, seriousness_score,
             confidence, impact_horizon, reason_tags_json, is_material_news, main_symbol, mentioned_symbols_json,
-            relevance_score, scored_ts_utc,
-            prompt_tokens, completion_tokens, total_tokens, reasoning_tokens, error_message
+            relevance_score, scored_ts_utc, prompt_tokens, completion_tokens, total_tokens, reasoning_tokens,
+            error_message
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
@@ -369,12 +427,16 @@ def get_symbol_scores_report(conn: sqlite3.Connection, scan_run_id: int) -> list
             """
             SELECT
                 ss.symbol,
-                ss.last_price,
-                ss.pct_change_1d,
-                ss.pct_change_intraday,
+                ss.trade_date,
+                ss.previous_trade_date,
+                ss.close_price,
+                ss.previous_close_price,
+                ss.pct_change,
                 ss.volume,
-                ss.market_cap,
+                ss.vwap,
+                ss.transaction_count,
                 ss.price_as_of_ts_utc,
+                ss.rank_abs_pct_change,
                 s.article_count,
                 s.weighted_impact_score,
                 s.weighted_seriousness_score,
@@ -384,7 +446,7 @@ def get_symbol_scores_report(conn: sqlite3.Connection, scan_run_id: int) -> list
             JOIN symbols_snapshot ss
               ON ss.scan_run_id = s.scan_run_id AND ss.symbol = s.symbol
             WHERE s.scan_run_id = ?
-            ORDER BY s.weighted_seriousness_score DESC, ABS(s.weighted_impact_score) DESC
+            ORDER BY ss.rank_abs_pct_change ASC, s.weighted_seriousness_score DESC, ABS(s.weighted_impact_score) DESC
             """,
             (scan_run_id,),
         ).fetchall()
@@ -405,3 +467,33 @@ def log_export(conn: sqlite3.Connection, scan_run_id: int, symbol: str, file_pat
         (scan_run_id, symbol, file_path, created_ts_utc),
     )
     conn.commit()
+
+
+def _needs_schema_reset(conn: sqlite3.Connection) -> bool:
+    version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+    table_names = [
+        str(row["name"])
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+    ]
+    return bool(table_names) and version != DB_SCHEMA_VERSION
+
+
+def _drop_all_tables(conn: sqlite3.Connection) -> None:
+    table_names = [
+        str(row["name"])
+        for row in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+    ]
+    for table_name in table_names:
+        conn.execute(f"DROP TABLE IF EXISTS {table_name}")
+    conn.execute("PRAGMA user_version = 0")
+    conn.commit()
+
+
+def _pick_value(row: dict[str, Any], preferred_key: str, fallback_key: str) -> Any:
+    if preferred_key in row:
+        return row.get(preferred_key)
+    return row.get(fallback_key)

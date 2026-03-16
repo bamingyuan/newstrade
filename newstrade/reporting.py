@@ -16,12 +16,16 @@ def build_report_dataframe(conn: sqlite3.Connection, scan_run_id: int) -> pd.Dat
         return pd.DataFrame(
             columns=[
                 "symbol",
-                "last_price",
-                "pct_change_1d",
-                "pct_change_intraday",
+                "trade_date",
+                "previous_trade_date",
+                "close_price",
+                "previous_close_price",
+                "pct_change",
                 "volume",
-                "market_cap",
+                "vwap",
+                "transaction_count",
                 "price_as_of_ts_utc",
+                "rank_abs_pct_change",
                 "article_count",
                 "weighted_impact_score",
                 "weighted_seriousness_score",
@@ -39,12 +43,16 @@ def build_report_dataframe(conn: sqlite3.Connection, scan_run_id: int) -> pd.Dat
         data.append(
             {
                 "symbol": symbol,
-                "last_price": row["last_price"],
-                "pct_change_1d": row["pct_change_1d"],
-                "pct_change_intraday": row["pct_change_intraday"],
+                "trade_date": row["trade_date"],
+                "previous_trade_date": row["previous_trade_date"],
+                "close_price": row["close_price"],
+                "previous_close_price": row["previous_close_price"],
+                "pct_change": row["pct_change"],
                 "volume": row["volume"],
-                "market_cap": row["market_cap"],
+                "vwap": row["vwap"],
+                "transaction_count": row["transaction_count"],
                 "price_as_of_ts_utc": row["price_as_of_ts_utc"],
+                "rank_abs_pct_change": row["rank_abs_pct_change"],
                 "article_count": row["article_count"],
                 "weighted_impact_score": row["weighted_impact_score"],
                 "weighted_seriousness_score": row["weighted_seriousness_score"],
@@ -62,27 +70,22 @@ def report_to_console(df: pd.DataFrame, top: int = 30) -> str:
     if df.empty:
         return "No scored symbols found for this run. Either scoring has not run yet or no articles were collected."
 
-    ordered = df.sort_values(
-        by=["weighted_seriousness_score", "weighted_impact_score"],
-        ascending=[False, False],
-        key=lambda s: s.abs() if s.name == "weighted_impact_score" else s,
-    ).head(top)
-
+    ordered = df.sort_values(by=["rank_abs_pct_change", "weighted_seriousness_score"], ascending=[True, False]).head(top)
     view = ordered[
         [
             "symbol",
-            "pct_change_1d",
-            "pct_change_intraday",
+            "previous_close_price",
+            "close_price",
+            "pct_change",
             "volume",
+            "article_count",
             "weighted_impact_score",
             "weighted_seriousness_score",
             "avg_relevance_score",
-            "article_count",
             "bullish_bearish_label",
             "top_reason_tags",
         ]
     ].copy()
-
     return view.to_string(index=False)
 
 
@@ -93,10 +96,9 @@ def _average_relevance(rows: list[dict[str, object]]) -> float:
         if raw is None:
             continue
         try:
-            value = float(raw)
+            values.append(float(raw))
         except (TypeError, ValueError):
             continue
-        values.append(value)
     if not values:
         return 0.0
     return round(sum(values) / len(values), 2)

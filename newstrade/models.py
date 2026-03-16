@@ -7,14 +7,18 @@ from dataclasses import dataclass
 class SymbolSnapshot:
     scan_run_id: int
     symbol: str
-    last_price: float
-    pct_change_1d: float | None
-    pct_change_intraday: float | None
+    trade_date: str | None
+    previous_trade_date: str | None
+    close_price: float | None
+    previous_close_price: float | None
+    pct_change: float | None
     volume: float | None
-    market_cap: float | None
-    price_source_ts_utc: str
+    vwap: float | None
+    transaction_count: int | None
     price_as_of_ts_utc: str
     passed_filters: bool
+    rank_abs_pct_change: int | None
+    selected_for_news: bool
 
 
 @dataclass
@@ -25,7 +29,7 @@ class NewsArticle:
     title: str
     source: str
     published_ts_utc: str
-    rss_fetched_ts_utc: str
+    fetched_ts_utc: str
     dedup_key: str
     summary: str | None = None
     provider: str = "yahoo_rss"

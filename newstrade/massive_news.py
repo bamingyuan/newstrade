@@ -8,10 +8,12 @@ import time
 
 import requests
 
+from .security import normalize_external_url
 from .time_utils import parse_iso_utc, utc_now
 from .yahoo_news import canonicalize_url
 
 MASSIVE_NEWS_URL = "https://api.massive.com/v2/reference/news"
+
 
 @dataclass
 class MassiveRateLimiter:
@@ -130,8 +132,8 @@ def fetch_symbol_news_massive(
 
     rows: list[dict[str, str]] = []
     seen: set[str] = set()
-
     page_count = 0
+
     try:
         while next_url and page_count < max_pages_per_symbol and len(rows) < max_articles:
             request_params = params if next_url == MASSIVE_NEWS_URL else {"apiKey": api_key}
@@ -171,7 +173,7 @@ def fetch_symbol_news_massive(
                         "title": title,
                         "source": source_name,
                         "published_ts_utc": published_dt.isoformat() if published_dt else published_text,
-                        "rss_fetched_ts_utc": fetched_ts_utc,
+                        "fetched_ts_utc": fetched_ts_utc,
                         "dedup_key": dedup_key,
                         "summary": str(item.get("description", "")).strip(),
                         "provider": "massive",
@@ -182,7 +184,8 @@ def fetch_symbol_news_massive(
                     break
 
             page_count += 1
-            next_url = str(payload.get("next_url", "")).strip() or None
+            raw_next_url = str(payload.get("next_url", "")).strip()
+            next_url = normalize_external_url(raw_next_url, allowed_hosts={"api.massive.com"}) or None
     finally:
         if owns_session:
             client.close()

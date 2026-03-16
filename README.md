@@ -2,12 +2,14 @@
 
 Newstrade is a Python app for investigating unusual stock moves.
 
-It scans US stocks with IBKR market data, collects recent news from Yahoo Finance RSS and optionally Massive (Polygon), scores each article with OpenAI, stores the results in SQLite, and lets you review the run in the CLI or a small Streamlit dashboard.
+It uses Massive daily market summaries to rank the biggest prior-close to close movers across the U.S. stock market, collects recent news from Yahoo Finance RSS and Massive, scores each article with OpenAI, stores the results in SQLite, and lets you review the run in the CLI or a small Streamlit dashboard.
 
 ## What It Does
 
-- finds symbols that moved enough to be interesting
-- collects recent news for those symbols
+- pulls the full U.S. stock daily market summary from Massive
+- compares the latest completed session close to the previous trading session close
+- filters and ranks symbols by absolute daily move
+- fetches recent news only for the top selected movers
 - scores each article for impact, seriousness, confidence, and relevance
 - aggregates article scores into symbol-level rankings
 - exports results to CSV and shows them in a read-only dashboard
@@ -17,9 +19,8 @@ It scans US stocks with IBKR market data, collects recent news from Yahoo Financ
 Requirements:
 
 - Python 3.10+
-- IB Gateway or TWS running locally for the scan step
+- a Massive API key for market data
 - an OpenAI API key for the `score` step
-- optionally, a Massive API key if you want a second news source
 
 After cloning the repository:
 
@@ -67,7 +68,7 @@ cp .env.example .env
 The pipeline is designed as separate stages:
 
 ```bash
-newstrade scan --window 1d --mode both
+newstrade scan
 newstrade news
 newstrade score
 newstrade report --top 30
@@ -76,8 +77,8 @@ newstrade export --format csv
 
 What each command does:
 
-- `scan` resolves symbols and stores price snapshots
-- `news` fetches recent articles for the passed symbols
+- `scan` loads the latest completed Massive daily market summary, compares it to the previous trading session, filters the universe, and selects the top movers for news
+- `news` fetches recent articles for the selected symbols
 - `score` sends articles to OpenAI and stores structured scores
 - `report` prints the ranked symbol summary in the terminal
 - `export` writes a CSV report to `CSV_EXPORT_DIR`
@@ -87,16 +88,8 @@ What each command does:
 You can also run the whole pipeline in one command:
 
 ```bash
-newstrade run-all --window 1d --mode both --top 30
+newstrade run-all --top 30
 ```
-
-Useful scan options:
-
-- `--window 1d` uses daily percentage change
-- `--window intraday` uses intraday percentage change
-- `--mode env` uses only the symbols from `.env`
-- `--mode ibkr` uses only the IBKR scanner
-- `--mode both` combines `.env` symbols and IBKR scanner results
 
 ## Dashboard
 
@@ -112,28 +105,26 @@ The dashboard is read-only and lets you browse recent runs, symbol-level scores,
 
 You do not need to tweak every variable. These are the ones to understand first:
 
-- `SYMBOL_MODE` chooses whether symbols come from `.env`, IBKR, or both.
-- `SYMBOLS` is the comma-separated fallback/watchlist used when `SYMBOL_MODE` includes `env`.
+- `MASSIVE_API_KEY` is required for `newstrade scan`.
+- `MAX_NEWS_SYMBOLS_PER_RUN` controls how many filtered movers continue into `news` and `score`.
 - `OPENAI_API_KEY` is required for `newstrade score`.
 - `OPENAI_MODEL` controls which model scores the articles.
-- `IBKR_HOST`, `IBKR_PORT`, and `IBKR_CLIENT_ID` control the connection to IB Gateway or TWS.
 - `DB_PATH` is the SQLite database path.
 - `CSV_EXPORT_DIR` is where CSV exports are written.
 
 Helpful optional settings:
 
-- `MASSIVE_API_KEY` enables Massive news in addition to Yahoo RSS.
-- `MASSIVE_NEWS=0` disables Massive completely, even if a key is present.
+- `MASSIVE_NEWS=0` disables Massive as a news source while keeping Yahoo RSS.
 - `YAHOO_RSS_ALLOWED_DOMAINS` limits accepted Yahoo RSS article domains.
-- `MIN_PCT_CHANGE`, `MIN_PRICE`, `MAX_PRICE`, `MIN_VOLUME`, and market-cap settings control scan filters.
-- `SCAN_TIME_TRAVEL=1` with `SCAN_AS_OF_DATE=YYYY-MM-DD` lets you replay a past date. Time travel only works with `--mode env` or `SYMBOL_MODE=env`.
+- `MIN_PCT_CHANGE`, `MIN_PRICE`, `MAX_PRICE`, `MIN_VOLUME`, and `MAX_VOLUME` control mover filters.
+- `SCAN_TIME_TRAVEL=1` with `SCAN_AS_OF_DATE=YYYY-MM-DD` lets you replay a past session date.
 
 A few practical notes:
 
 - leaving optional numeric filters empty disables them
-- if `MASSIVE_API_KEY` is empty, the app uses Yahoo RSS only
 - timestamps are stored in UTC
 - the app writes local data to `./data` and exports to `./exports` by default
+- old SQLite schemas are reset automatically because the app is still unreleased
 
 ## Tests
 

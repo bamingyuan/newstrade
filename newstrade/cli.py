@@ -28,10 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--env-file", default=".env", help="Path to .env file")
 
     subparsers = parser.add_subparsers(dest="command", required=True)
-
-    scan_parser = subparsers.add_parser("scan", help="Scan price movers")
-    scan_parser.add_argument("--window", choices=["1d", "intraday"], default=None)
-    scan_parser.add_argument("--mode", choices=["env", "ibkr", "both"], default=None)
+    subparsers.add_parser("scan", help="Scan daily market movers with Massive")
 
     news_parser = subparsers.add_parser("news", help="Fetch news for a scan run")
     news_parser.add_argument("--scan-run-id", type=int, default=None)
@@ -44,8 +41,6 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser.add_argument("--top", type=int, default=30)
 
     run_all_parser = subparsers.add_parser("run-all", help="Run scan -> news -> score -> report")
-    run_all_parser.add_argument("--window", choices=["1d", "intraday"], default=None)
-    run_all_parser.add_argument("--mode", choices=["env", "ibkr", "both"], default=None)
     run_all_parser.add_argument("--top", type=int, default=30)
 
     export_parser = subparsers.add_parser("export", help="Export report as CSV")
@@ -77,7 +72,7 @@ def main(argv: list[str] | None = None) -> int:
     configure_logging(config.log_level)
 
     if args.command == "scan":
-        run_id = run_scan(config=config, window=args.window, mode=args.mode)
+        run_id = run_scan(config=config)
         print(f"scan_run_id={run_id}")
         return 0
 
@@ -148,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "run-all":
-        run_id, report_text = run_all(config=config, window=args.window, mode=args.mode, top=args.top)
+        run_id, report_text = run_all(config=config, top=args.top)
         print(f"scan_run_id={run_id}")
         print(report_text)
         return 0
