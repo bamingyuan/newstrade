@@ -2,7 +2,7 @@
 
 Newstrade is a Python app for investigating unusual stock moves.
 
-It uses Massive daily market summaries to rank the biggest prior-close to close movers across the U.S. stock market, collects recent news from Yahoo Finance RSS and Massive, scores each article with OpenAI, stores the results in SQLite, and lets you review the run in the CLI or a small Streamlit dashboard.
+It uses Massive daily market summaries to rank the biggest prior-close to close movers across the U.S. stock market, collects recent news from Yahoo Finance RSS, scores each article with OpenAI, stores the results in SQLite, and lets you review the run in the CLI or a small Streamlit dashboard.
 
 ## What It Does
 
@@ -108,7 +108,6 @@ You do not need to tweak every variable. These are the ones to understand first:
 
 Helpful optional settings:
 
-- `MASSIVE_NEWS=0` disables Massive as a news source while keeping only Yahoo RSS.
 - `YAHOO_RSS_ALLOWED_DOMAINS` limits accepted Yahoo RSS article domains.
 - `MIN_PCT_CHANGE`, `MIN_PRICE`, `MAX_PRICE`, `MIN_VOLUME`, and `MAX_VOLUME` control mover filters.
 - `SCAN_TIME_TRAVEL=1` with `SCAN_AS_OF_DATE=YYYY-MM-DD` lets you replay a past session date.

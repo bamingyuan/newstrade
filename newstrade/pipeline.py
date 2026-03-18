@@ -27,7 +27,6 @@ from .db import (
     upsert_symbol_score,
 )
 from .massive_market_data import MassiveGroupedDailyClient
-from .massive_news import MassiveRateLimiter, fetch_symbol_news_massive
 from .market_data import passes_symbol_filters, pct_change
 from .reporting import build_report_dataframe, report_to_console
 from .time_utils import parse_iso_utc, utc_now_iso
@@ -311,7 +310,6 @@ def run_news(
     config: AppConfig,
     scan_run_id: int,
     news_fetcher: Callable[..., list[dict[str, str]]] = fetch_symbol_news,
-    massive_news_fetcher: Callable[..., list[dict[str, str]]] = fetch_symbol_news_massive,
 ) -> int:
     conn = connect_db(config.db_path)
     init_db(conn)
@@ -330,10 +328,6 @@ def run_news(
     )
     as_of_datetime_utc = as_of_datetime.astimezone(timezone.utc) if as_of_datetime is not None else None
     yahoo_rss_allowed_domains = {domain.lower() for domain in config.yahoo_rss_allowed_domains}
-    massive_enabled = config.massive_news_enabled and bool(config.massive_api_key.strip())
-    massive_limiter = (
-        MassiveRateLimiter(max_calls_per_minute=config.massive_max_calls_per_minute) if massive_enabled else None
-    )
 
     for symbol_row in symbols:
         symbol = str(symbol_row["symbol"])
@@ -352,22 +346,6 @@ def run_news(
             fetched_items.extend(_call_provider(news_fetcher, yahoo_kwargs))
         except Exception:  # noqa: BLE001
             logger.exception("Yahoo news fetch failed for symbol=%s", symbol)
-
-        if massive_enabled:
-            try:
-                massive_kwargs: dict[str, Any] = {
-                    "symbol": symbol,
-                    "lookback_hours": config.news_lookback_hours,
-                    "max_articles": config.max_news_articles_per_symbol,
-                    "api_key": config.massive_api_key,
-                    "as_of_datetime": as_of_datetime,
-                    "max_pages_per_symbol": config.massive_news_max_pages_per_symbol,
-                    "max_calls_per_minute": config.massive_max_calls_per_minute,
-                    "rate_limiter": massive_limiter,
-                }
-                fetched_items.extend(_call_provider(massive_news_fetcher, massive_kwargs))
-            except Exception:  # noqa: BLE001
-                logger.exception("Massive news fetch failed for symbol=%s", symbol)
 
         for item in fetched_items:
             provider = str(item.get("provider", "yahoo_rss")).strip().lower() or "yahoo_rss"
