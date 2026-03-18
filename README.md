@@ -19,8 +19,8 @@ It uses Massive daily market summaries to rank the biggest prior-close to close 
 Requirements:
 
 - Python 3.10+
-- a Massive API key for market data
-- an OpenAI API key for the `score` step
+- a Massive API key for market data [https://massive.com/](https://massive.com/)
+- an OpenAI API key for the `score` step [https://platform.openai.com/api-keys](https://platform.openai.com/api-keys)
 
 After cloning the repository:
 
@@ -54,12 +54,6 @@ python -m pip install ".[dev]"
 Create your local config file:
 
 ```bash
-copy .env.example .env
-```
-
-On macOS or Linux:
-
-```bash
 cp .env.example .env
 ```
 
@@ -71,8 +65,8 @@ The pipeline is designed as separate stages:
 newstrade scan
 newstrade news
 newstrade score
-newstrade report --top 30
-newstrade export --format csv
+newstrade report --top 30 (Optional)
+newstrade export --format csv (Optional)
 ```
 
 What each command does:
@@ -114,22 +108,8 @@ You do not need to tweak every variable. These are the ones to understand first:
 
 Helpful optional settings:
 
-- `MASSIVE_NEWS=0` disables Massive as a news source while keeping Yahoo RSS.
+- `MASSIVE_NEWS=0` disables Massive as a news source while keeping only Yahoo RSS.
 - `YAHOO_RSS_ALLOWED_DOMAINS` limits accepted Yahoo RSS article domains.
 - `MIN_PCT_CHANGE`, `MIN_PRICE`, `MAX_PRICE`, `MIN_VOLUME`, and `MAX_VOLUME` control mover filters.
 - `SCAN_TIME_TRAVEL=1` with `SCAN_AS_OF_DATE=YYYY-MM-DD` lets you replay a past session date.
 
-A few practical notes:
-
-- leaving optional numeric filters empty disables them
-- timestamps are stored in UTC
-- the app writes local data to `./data` and exports to `./exports` by default
-- old SQLite schemas are reset automatically because the app is still unreleased
-
-## Tests
-
-Run the test suite with:
-
-```bash
-pytest -q
-```
