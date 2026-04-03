@@ -85,6 +85,12 @@ You can also run the whole pipeline in one command:
 newstrade run-all --top 30
 ```
 
+To export the latest agent JSON as part of the same run:
+
+```bash
+newstrade run-all --top 30 --export-agent-json
+```
+
 If you want one machine-readable file for an AI agent, export the latest run as JSON:
 
 ```bash

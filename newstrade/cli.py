@@ -43,6 +43,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run_all_parser = subparsers.add_parser("run-all", help="Run scan -> news -> score -> report")
     run_all_parser.add_argument("--top", type=int, default=30)
+    run_all_parser.add_argument("--export-agent-json", action="store_true")
 
     export_parser = subparsers.add_parser("export", help="Export report as CSV")
     export_parser.add_argument("--scan-run-id", type=int, default=None)
@@ -151,6 +152,9 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "run-all":
         run_id, report_text = run_all(config=config, top=args.top)
+        if args.export_agent_json:
+            path = export_latest_agent_payload(config.db_path, default_agent_export_path(config.csv_export_dir))
+            print(f"Exported agent JSON: {path}")
         print(f"scan_run_id={run_id}")
         print(report_text)
         return 0
