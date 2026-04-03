@@ -4,6 +4,7 @@ import argparse
 import logging
 import sys
 
+from .agent_export import default_agent_export_path, export_latest_agent_payload
 from .config import load_config
 from .db import connect_db, get_latest_scan_run_ids, init_db
 from .pipeline import run_all, run_news, run_report, run_scan, run_score
@@ -46,6 +47,12 @@ def build_parser() -> argparse.ArgumentParser:
     export_parser = subparsers.add_parser("export", help="Export report as CSV")
     export_parser.add_argument("--scan-run-id", type=int, default=None)
     export_parser.add_argument("--format", choices=["csv"], default="csv")
+
+    export_agent_json_parser = subparsers.add_parser(
+        "export-agent-json",
+        help="Export the latest run as one structured JSON file for AI agents",
+    )
+    export_agent_json_parser.add_argument("--output", default=None)
 
     return parser
 
@@ -159,6 +166,16 @@ def main(argv: list[str] | None = None) -> int:
         path = export_report_csv(conn, scan_run_id=scan_run_id, export_dir=config.csv_export_dir)
         conn.close()
         print(f"Exported CSV: {path}")
+        return 0
+
+    if args.command == "export-agent-json":
+        output_path = args.output or str(default_agent_export_path(config.csv_export_dir))
+        try:
+            path = export_latest_agent_payload(config.db_path, output_path)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 2
+        print(f"Exported agent JSON: {path}")
         return 0
 
     parser.print_help()

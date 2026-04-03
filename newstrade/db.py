@@ -373,6 +373,44 @@ def get_scored_articles_for_symbol(conn: sqlite3.Connection, scan_run_id: int, s
     )
 
 
+def get_symbol_article_details(conn: sqlite3.Connection, scan_run_id: int, symbol: str) -> list[sqlite3.Row]:
+    return list(
+        conn.execute(
+            """
+            SELECT
+                n.article_id,
+                n.symbol,
+                n.title,
+                n.source,
+                n.url,
+                n.published_ts_utc,
+                COALESCE(a.summary, n.summary) AS summary,
+                n.provider,
+                n.provider_article_id,
+                a.openai_model,
+                a.impact_score,
+                a.impact_direction,
+                a.seriousness_score,
+                a.confidence,
+                a.impact_horizon,
+                a.is_material_news,
+                a.main_symbol,
+                a.mentioned_symbols_json,
+                a.reason_tags_json,
+                a.relevance_score,
+                a.scored_ts_utc,
+                a.error_message
+            FROM news_articles n
+            LEFT JOIN article_scores a
+              ON a.article_id = n.article_id
+            WHERE n.scan_run_id = ? AND n.symbol = ?
+            ORDER BY n.published_ts_utc DESC, n.article_id DESC
+            """,
+            (scan_run_id, symbol),
+        ).fetchall()
+    )
+
+
 def upsert_symbol_score(conn: sqlite3.Connection, row: dict[str, Any]) -> None:
     conn.execute(
         """

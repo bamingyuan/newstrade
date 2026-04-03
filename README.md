@@ -85,6 +85,24 @@ You can also run the whole pipeline in one command:
 newstrade run-all --top 30
 ```
 
+If you want one machine-readable file for an AI agent, export the latest run as JSON:
+
+```bash
+newstrade export-agent-json
+```
+
+By default this writes:
+
+```text
+exports/agent_latest.json
+```
+
+You can also choose a custom file path:
+
+```bash
+newstrade export-agent-json --output /path/to/agent_latest.json
+```
+
 ## Dashboard
 
 Start the Streamlit dashboard with:
