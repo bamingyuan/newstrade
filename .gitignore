@@ -12,3 +12,4 @@ tests/
 .playwright*
 .venv/
 .streamlit/
+exports/
