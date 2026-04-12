@@ -70,7 +70,15 @@ def report_to_console(df: pd.DataFrame, top: int = 30) -> str:
     if df.empty:
         return "No scored symbols found for this run. Either scoring has not run yet or no articles were collected."
 
-    ordered = df.sort_values(by=["rank_abs_pct_change", "weighted_seriousness_score"], ascending=[True, False]).head(top)
+    ordered = (
+        df.assign(priority_notional=_priority_notional_series(df))
+        .sort_values(
+            by=["priority_notional", "weighted_seriousness_score", "weighted_impact_score", "symbol"],
+            ascending=[False, False, False, True],
+        )
+        .drop(columns=["priority_notional"])
+        .head(top)
+    )
     view = ordered[
         [
             "symbol",
@@ -102,6 +110,12 @@ def _average_relevance(rows: list[dict[str, object]]) -> float:
     if not values:
         return 0.0
     return round(sum(values) / len(values), 2)
+
+
+def _priority_notional_series(df: pd.DataFrame) -> pd.Series:
+    close_price = pd.to_numeric(df["close_price"], errors="coerce").fillna(0)
+    volume = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
+    return close_price * volume
 
 
 def export_report_csv(

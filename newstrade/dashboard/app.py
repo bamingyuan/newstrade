@@ -558,16 +558,7 @@ def main() -> None:
         return
 
     pct_change_numeric = pd.to_numeric(df["pct_change"], errors="coerce")
-    filtered = (
-        df.assign(
-            _rank=pd.to_numeric(df["rank_abs_pct_change"], errors="coerce").fillna(999999),
-            _abs_pct_change=pct_change_numeric.abs().fillna(0),
-            _pct_change_raw=pct_change_numeric.fillna(0),
-        )
-        .sort_values(by=["_rank", "_abs_pct_change", "_pct_change_raw"], ascending=[True, False, True])
-        .drop(columns=["_rank", "_abs_pct_change", "_pct_change_raw"])
-        .reset_index(drop=True)
-    )
+    filtered = df.reset_index(drop=True)
 
     symbols = filtered["symbol"].astype(str).tolist()
     index_state_key = f"selected_symbol_index_{selected_run}"

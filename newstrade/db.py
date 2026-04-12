@@ -484,7 +484,11 @@ def get_symbol_scores_report(conn: sqlite3.Connection, scan_run_id: int) -> list
             JOIN symbols_snapshot ss
               ON ss.scan_run_id = s.scan_run_id AND ss.symbol = s.symbol
             WHERE s.scan_run_id = ?
-            ORDER BY ss.rank_abs_pct_change ASC, s.weighted_seriousness_score DESC, ABS(s.weighted_impact_score) DESC
+            ORDER BY
+                COALESCE(ss.volume, 0) * COALESCE(ss.close_price, 0) DESC,
+                s.weighted_seriousness_score DESC,
+                ABS(s.weighted_impact_score) DESC,
+                ss.symbol ASC
             """,
             (scan_run_id,),
         ).fetchall()
