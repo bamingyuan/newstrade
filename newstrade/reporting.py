@@ -19,6 +19,7 @@ def build_report_dataframe(conn: sqlite3.Connection, scan_run_id: int) -> pd.Dat
                 "trade_date",
                 "previous_trade_date",
                 "close_price",
+                "dollar_volume",
                 "previous_close_price",
                 "pct_change",
                 "volume",
@@ -46,6 +47,7 @@ def build_report_dataframe(conn: sqlite3.Connection, scan_run_id: int) -> pd.Dat
                 "trade_date": row["trade_date"],
                 "previous_trade_date": row["previous_trade_date"],
                 "close_price": row["close_price"],
+                "dollar_volume": _priority_notional(row["close_price"], row["volume"]),
                 "previous_close_price": row["previous_close_price"],
                 "pct_change": row["pct_change"],
                 "volume": row["volume"],
@@ -112,10 +114,16 @@ def _average_relevance(rows: list[dict[str, object]]) -> float:
     return round(sum(values) / len(values), 2)
 
 
+def _priority_notional(close_price: object, volume: object) -> float:
+    close_numeric = pd.to_numeric(pd.Series([close_price]), errors="coerce").fillna(0).iloc[0]
+    volume_numeric = pd.to_numeric(pd.Series([volume]), errors="coerce").fillna(0).iloc[0]
+    return float(close_numeric * volume_numeric)
+
+
 def _priority_notional_series(df: pd.DataFrame) -> pd.Series:
-    close_price = pd.to_numeric(df["close_price"], errors="coerce").fillna(0)
-    volume = pd.to_numeric(df["volume"], errors="coerce").fillna(0)
-    return close_price * volume
+    return pd.to_numeric(df["close_price"], errors="coerce").fillna(0) * pd.to_numeric(
+        df["volume"], errors="coerce"
+    ).fillna(0)
 
 
 def export_report_csv(

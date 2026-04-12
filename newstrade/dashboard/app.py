@@ -328,6 +328,13 @@ def _format_decimal(value: object, digits: int = 1) -> str:
     return f"{numeric:.{digits}f}".rstrip("0").rstrip(".")
 
 
+def _format_currency(value: object, digits: int = 0) -> str:
+    numeric = _coerce_float(value)
+    if numeric is None:
+        return "n/a"
+    return f"${numeric:,.{digits}f}"
+
+
 def _format_pct(value: object) -> str:
     numeric = _coerce_float(value)
     if numeric is None:
@@ -469,6 +476,10 @@ def _render_symbol_card(row: pd.Series, max_abs_change: float) -> None:
             <div class="metric-value">{html.escape(_format_decimal(row.get("close_price"), 2))}</div>
         </div>
         <div class="metric-row">
+            <div class="metric-label">Dollar Volume</div>
+            <div class="metric-value">{html.escape(_format_currency(row.get("dollar_volume"), 0))}</div>
+        </div>
+        <div class="metric-row">
             <div class="metric-label">Trade Dates</div>
             <div class="metric-value">{html.escape(f"{row.get('previous_trade_date')} -> {row.get('trade_date')}")}</div>
         </div>
@@ -557,7 +568,6 @@ def main() -> None:
         st.warning("No scored symbols found for this run. Run `news` and `score`, or check whether any articles were collected.")
         return
 
-    pct_change_numeric = pd.to_numeric(df["pct_change"], errors="coerce")
     filtered = df.reset_index(drop=True)
 
     symbols = filtered["symbol"].astype(str).tolist()
